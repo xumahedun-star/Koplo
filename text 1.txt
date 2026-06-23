@@ -1,0 +1,352 @@
+local CoreGui = game:GetService("CoreGui") or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ==================== KILL SWITCH & CONFIG ====================
+local isRunning = true
+local Config = {} 
+
+if CoreGui:FindFirstChild("KemantapanUI") then 
+    CoreGui.KemantapanUI:Destroy() 
+end
+
+-- ==================== SISTEM REFRESH MAP (DIOPTIMALKAN) ====================
+local MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Items = {}}
+
+local function RefreshMapObjects()
+    MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Items = {}}
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        if v:IsA("Model") or v:IsA("BasePart") then
+            local name = string.lower(v.Name)
+            if name:find("generator") or name:find("gen") then table.insert(MapObjects.Generators, v)
+            elseif name:find("pallet") then table.insert(MapObjects.Pallets, v)
+            elseif name:find("window") or name:find("vault") then table.insert(MapObjects.Windows, v)
+            elseif name:find("hook") or name:find("meat") then table.insert(MapObjects.Hooks, v)
+            elseif name:find("gate") or name:find("exit") then table.insert(MapObjects.Gates, v)
+            end
+        end
+    end
+end
+pcall(RefreshMapObjects) 
+
+-- Helper: Ambil Progress Generator
+local function GetGenProgress(gen)
+    local highest = 0
+    pcall(function()
+        for _, v in ipairs(gen:GetDescendants()) do
+            if (v:IsA("IntValue") or v:IsA("NumberValue")) and (v.Name:lower():find("prog") or v.Name:lower():find("val")) then
+                if v.Value > highest and v.Value <= 100 then highest = math.floor(v.Value) end
+            elseif v:IsA("ProximityPrompt") then
+                local txt = v.ObjectText .. v.ActionText
+                local num = txt:match("(%d+)%%")
+                if num and tonumber(num) > highest then highest = tonumber(num) end
+            end
+        end
+    end)
+    return highest
+end
+
+-- ==================== UI SETUP ====================
+local ScreenGui = Instance.new("ScreenGui", CoreGui)
+ScreenGui.Name = "KemantapanUI"; ScreenGui.ResetOnSpawn = false
+
+local ToggleR = Instance.new("TextButton", ScreenGui)
+ToggleR.Size = UDim2.new(0, 40, 0, 40); ToggleR.Position = UDim2.new(0.85, 0, 0.1, 0)
+ToggleR.BackgroundColor3 = Color3.fromRGB(255, 215, 0); ToggleR.TextColor3 = Color3.fromRGB(15, 15, 15)
+ToggleR.Font = Enum.Font.GothamBold; ToggleR.TextSize = 18; ToggleR.Text = "R"
+ToggleR.Active = true; ToggleR.Draggable = true
+Instance.new("UICorner", ToggleR).CornerRadius = UDim.new(1, 0)
+
+local Main = Instance.new("Frame", ScreenGui)
+Main.Size = UDim2.new(0, 450, 0, 300); Main.Position = UDim2.new(0.5, -225, 0.5, -150)
+Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15); Main.BorderColor3 = Color3.fromRGB(255, 215, 0)
+Main.BorderSizePixel = 2; Main.Active = true; Main.Draggable = true
+
+local TitleBar = Instance.new("Frame", Main)
+TitleBar.Size = UDim2.new(1, 0, 0, 30); TitleBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25); TitleBar.BorderSizePixel = 0
+local TitleText = Instance.new("TextLabel", TitleBar)
+TitleText.Size = UDim2.new(1, -40, 1, 0); TitleText.Position = UDim2.new(0, 10, 0, 0); TitleText.BackgroundTransparency = 1
+TitleText.Text = "Kemantapan Hub | Lite Mode"; TitleText.TextColor3 = Color3.fromRGB(255, 215, 0); TitleText.Font = Enum.Font.GothamBold; TitleText.TextSize = 14; TitleText.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton", TitleBar)
+CloseBtn.Size = UDim2.new(0, 30, 1, 0); CloseBtn.Position = UDim2.new(1, -30, 0, 0); CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "X"; CloseBtn.TextColor3 = Color3.fromRGB(255, 50, 50); CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 16
+
+local Sidebar = Instance.new("Frame", Main)
+Sidebar.Size = UDim2.new(0, 120, 1, -30); Sidebar.Position = UDim2.new(0, 0, 0, 30)
+Sidebar.BackgroundColor3 = Color3.fromRGB(20, 20, 20); Sidebar.BorderSizePixel = 0
+local ContentArea = Instance.new("Frame", Main)
+ContentArea.Size = UDim2.new(1, -120, 1, -30); ContentArea.Position = UDim2.new(0, 120, 0, 30); ContentArea.BackgroundTransparency = 1
+
+-- ==================== FUNGSI LOGIKA UI ====================
+ToggleR.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
+CloseBtn.MouseButton1Click:Connect(function() isRunning = false; ScreenGui:Destroy() end)
+
+local Tabs = {}
+local function CreateTab(name, yPos)
+    local Btn = Instance.new("TextButton", Sidebar)
+    Btn.Size = UDim2.new(1, 0, 0, 35); Btn.Position = UDim2.new(0, 0, 0, yPos); Btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    Btn.Text = name; Btn.TextColor3 = Color3.fromRGB(180, 180, 180); Btn.Font = Enum.Font.GothamSemibold; Btn.TextSize = 12; Btn.BorderSizePixel = 0
+
+    local Page = Instance.new("ScrollingFrame", ContentArea)
+    Page.Size = UDim2.new(1, 0, 1, 0); Page.BackgroundTransparency = 1; Page.ScrollBarThickness = 4; Page.Visible = false
+    local Layout = Instance.new("UIListLayout", Page); Layout.SortOrder = Enum.SortOrder.LayoutOrder; Layout.Padding = UDim.new(0, 5)
+
+    table.insert(Tabs, {Btn = Btn, Page = Page})
+    Btn.MouseButton1Click:Connect(function()
+        for _, t in pairs(Tabs) do t.Btn.TextColor3 = Color3.fromRGB(180, 180, 180); t.Page.Visible = false end
+        Btn.TextColor3 = Color3.fromRGB(255, 215, 0); Page.Visible = true
+    end)
+    return Page
+end
+
+local function CreateToggle(parent, title, callback)
+    local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -10, 0, 30); Container.BackgroundTransparency = 1
+    local Lbl = Instance.new("TextLabel", Container); Lbl.Size = UDim2.new(0.65, 0, 1, 0); Lbl.BackgroundTransparency = 1; Lbl.Text = "  " .. title; Lbl.TextColor3 = Color3.fromRGB(220, 220, 220); Lbl.Font = Enum.Font.Gotham; Lbl.TextSize = 12; Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local Btn = Instance.new("TextButton", Container)
+    Btn.Size = UDim2.new(0, 70, 0, 22); Btn.Position = UDim2.new(1, -80, 0.5, -11); Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Btn.Text = "OFF"; Btn.TextColor3 = Color3.fromRGB(255, 100, 100); Btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+
+    Config[title] = false 
+    Btn.MouseButton1Click:Connect(function()
+        Config[title] = not Config[title]
+        Btn.Text = Config[title] and "ON" or "OFF"
+        Btn.BackgroundColor3 = Config[title] and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35)
+        Btn.TextColor3 = Config[title] and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
+        if callback then pcall(function() callback(Config[title]) end) end
+    end)
+end
+
+local function CreateInputToggle(parent, title, defaultInput, callback)
+    local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -10, 0, 30); Container.BackgroundTransparency = 1
+    local Lbl = Instance.new("TextLabel", Container); Lbl.Size = UDim2.new(0.4, 0, 1, 0); Lbl.BackgroundTransparency = 1; Lbl.Text = "  " .. title; Lbl.TextColor3 = Color3.fromRGB(220, 220, 220); Lbl.Font = Enum.Font.Gotham; Lbl.TextSize = 12; Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local InputBox = Instance.new("TextBox", Container)
+    InputBox.Size = UDim2.new(0, 40, 0, 22); InputBox.Position = UDim2.new(0.45, 0, 0.5, -11); InputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30); InputBox.TextColor3 = Color3.fromRGB(255, 255, 255); InputBox.Text = tostring(defaultInput); InputBox.Font = Enum.Font.Gotham; InputBox.TextSize = 11; Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 4)
+    
+    local Btn = Instance.new("TextButton", Container)
+    Btn.Size = UDim2.new(0, 70, 0, 22); Btn.Position = UDim2.new(1, -80, 0.5, -11); Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Btn.Text = "OFF"; Btn.TextColor3 = Color3.fromRGB(255, 100, 100); Btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+
+    Config[title] = false
+    Btn.MouseButton1Click:Connect(function()
+        Config[title] = not Config[title]
+        Btn.Text = Config[title] and "ON" or "OFF"
+        Btn.BackgroundColor3 = Config[title] and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35)
+        Btn.TextColor3 = Config[title] and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
+        if callback then pcall(function() callback(Config[title], tonumber(InputBox.Text) or defaultInput) end) end
+    end)
+end
+
+local function CreateButton(parent, title, callback)
+    local Btn = Instance.new("TextButton", parent); Btn.Size = UDim2.new(1, -10, 0, 28); Btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40); Btn.Text = title; Btn.TextColor3 = Color3.fromRGB(255, 215, 0); Btn.Font = Enum.Font.GothamBold; Btn.TextSize = 12; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    Btn.MouseButton1Click:Connect(function() pcall(callback) end)
+end
+
+-- ==================== MEMBANGUN TAB ====================
+local TabInfo = CreateTab("Informasi", 0)
+local TabSurv = CreateTab("Survivor", 35)
+local TabESP = CreateTab("ESP Menu", 70)
+local TabSet = CreateTab("Pengaturan", 105)
+Tabs[1].Page.Visible = true; Tabs[1].Btn.TextColor3 = Color3.fromRGB(255, 215, 0)
+
+Instance.new("TextLabel", TabInfo).Size = UDim2.new(1, 0, 0, 70)
+local InfoTxt = Instance.new("TextLabel", TabInfo); InfoTxt.Size = UDim2.new(1, 0, 0, 70); InfoTxt.BackgroundTransparency = 1; InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: LITE MODE (Anti-Lag)"; InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255); InfoTxt.Font = Enum.Font.Gotham; InfoTxt.TextSize = 12; InfoTxt.TextXAlignment = Enum.TextXAlignment.Left
+
+CreateToggle(TabSurv, "Auto Gen Rush (TP + Auto Fix)")
+CreateToggle(TabSurv, "Auto Skill Check [INSTAN]")
+CreateToggle(TabSurv, "Auto Skill Check [LEGIT]")
+CreateToggle(TabSurv, "Noclip (Tembus Tembok)")
+CreateInputToggle(TabSurv, "WalkSpeed", 50, function(state, value) Config["WalkSpeed Value"] = value end)
+
+CreateToggle(TabESP, "World Visuals (1 Tombol)", function(state)
+    pcall(function()
+        Lighting.Ambient = state and Color3.new(1,1,1) or Color3.new(0,0,0)
+        Lighting.FogEnd = state and 100000 or 10000
+        Lighting.GlobalShadows = not state
+    end)
+end)
+CreateButton(TabESP, "Manual Refresh Map (Klik Jika Bug)", function() RefreshMapObjects() end)
+CreateToggle(TabESP, "ESP Survivor")
+CreateToggle(TabESP, "ESP Killer")
+CreateToggle(TabESP, "ESP Generator")
+CreateToggle(TabESP, "ESP Pallet")
+CreateToggle(TabESP, "ESP Window")
+CreateToggle(TabESP, "Tampilkan Nama (Hanya Player)")
+CreateToggle(TabESP, "Tampilkan Distance")
+
+CreateButton(TabSet, "Auto Save Config", function() if writefile then writefile("KMT_Config.txt", HttpService:JSONEncode(Config)) end end)
+
+-- ==================== ENGINE ESP (DIPERBAIKI TEXTNYA) ====================
+local function DrawESP(obj, textName, color, isEnabled, isPlayer, isGenerator)
+    if not obj or not obj.Parent then return end 
+    pcall(function()
+        local highlight = obj:FindFirstChild("KM_ESP")
+        local textLabelGui = obj:FindFirstChild("KM_TXT")
+
+        if isEnabled then
+            if not highlight then
+                highlight = Instance.new("Highlight", obj); highlight.Name = "KM_ESP"; highlight.FillColor = color; highlight.FillTransparency = 0.5; highlight.OutlineColor = color
+            end
+            highlight.Enabled = true
+
+            local targetPart = obj:IsA("BasePart") and obj or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
+            if targetPart then
+                if not textLabelGui then
+                    textLabelGui = Instance.new("BillboardGui", obj); textLabelGui.Name = "KM_TXT"; textLabelGui.Size = UDim2.new(0, 200, 0, 50); textLabelGui.AlwaysOnTop = true
+                    local txt = Instance.new("TextLabel", textLabelGui); txt.Name = "Text"; txt.Size = UDim2.new(1,0,1,0); txt.BackgroundTransparency = 1; txt.TextColor3 = color; txt.TextStrokeTransparency = 0; txt.Font = Enum.Font.GothamBold; txt.TextSize = 12
+                end
+                
+                local showText = false
+                local finalText = ""
+
+                -- Logika Teks (Player dipertahankan, objek dikosongkan kecuali distance/persentase)
+                if isPlayer then
+                    if Config["Tampilkan Nama (Hanya Player)"] then 
+                        finalText = textName
+                        showText = true 
+                    end
+                else
+                    if textName ~= "" then
+                        finalText = textName
+                        showText = true
+                    end
+                end
+
+                if Config["Tampilkan Distance"] and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = math.floor((LocalPlayer.Character.HumanoidRootPart.Position - targetPart.Position).Magnitude)
+                    if finalText ~= "" then finalText = finalText .. " " end
+                    finalText = finalText .. "[" .. dist .. "m]"
+                    showText = true
+                end
+
+                if isGenerator then
+                    local prog = GetGenProgress(obj)
+                    if finalText ~= "" then finalText = finalText .. " " end
+                    finalText = finalText .. "(" .. prog .. "%)"
+                    showText = true
+                end
+
+                if showText and finalText ~= "" then 
+                    textLabelGui.Enabled = true
+                    textLabelGui.Text.Text = finalText 
+                else 
+                    textLabelGui.Enabled = false 
+                end
+            end
+        else
+            if highlight then highlight.Enabled = false end
+            if textLabelGui then textLabelGui.Enabled = false end
+        end
+    end)
+end
+
+-- ==================== BACKGROUND LOOP (ANTI-LAG) ====================
+RunService.Stepped:Connect(function()
+    if not isRunning then return end
+    pcall(function()
+        if Config["Noclip (Tembus Tembok)"] and LocalPlayer.Character then
+            for _, v in ipairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end
+        end
+        if Config["WalkSpeed"] and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = Config["WalkSpeed Value"] or 50
+        end
+    end)
+end)
+
+local skillCheckDebounce = false
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if not isRunning then break end 
+
+        pcall(function()
+            -- 1. DETEKSI PLAYER
+            local killerPos = nil
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    local isKiller = false
+                    if p.Team and (string.lower(p.Team.Name):find("killer") or string.lower(p.Team.Name):find("murder")) then isKiller = true end
+                    
+                    if isKiller then 
+                        DrawESP(p.Character, p.Name.." [KILLER]", Color3.fromRGB(255, 0, 0), Config["ESP Killer"], true, false)
+                        if p.Character:FindFirstChild("HumanoidRootPart") then killerPos = p.Character.HumanoidRootPart.Position end
+                    else 
+                        DrawESP(p.Character, p.Name, Color3.fromRGB(0, 255, 0), Config["ESP Survivor"], true, false) 
+                    end
+                end
+            end
+
+            -- 2. ESP OBJECTS (Teks nama dihilangkan menggunakan string kosong "")
+            for _, gen in ipairs(MapObjects.Generators) do DrawESP(gen, "", Color3.fromRGB(255, 255, 0), Config["ESP Generator"], false, true) end
+            for _, pal in ipairs(MapObjects.Pallets) do DrawESP(pal, "", Color3.fromRGB(255, 150, 0), Config["ESP Pallet"], false, false) end
+            for _, win in ipairs(MapObjects.Windows) do DrawESP(win, "", Color3.fromRGB(0, 255, 255), Config["ESP Window"], false, false) end
+
+            -- 3. AUTO GEN RUSH (DIPERBAIKI UNTUK VIOLENT DISTRICT)
+            if Config["Auto Gen Rush (TP + Auto Fix)"] and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local myPos = LocalPlayer.Character.HumanoidRootPart.Position
+                local isKillerNear = killerPos and (myPos - killerPos).Magnitude < 40
+                local targetGen, minDistance = nil, math.huge
+
+                for _, gen in ipairs(MapObjects.Generators) do
+                    if gen and gen:FindFirstChildWhichIsA("BasePart") then
+                        if GetGenProgress(gen) < 100 then
+                            local genPos = gen:FindFirstChildWhichIsA("BasePart").Position
+                            local distToGen = (myPos - genPos).Magnitude
+                            if isKillerNear then
+                                if (genPos - killerPos).Magnitude > 60 and distToGen < minDistance then minDistance = distToGen; targetGen = gen end
+                            else
+                                if distToGen < minDistance then minDistance = distToGen; targetGen = gen end
+                            end
+                        end
+                    end
+                end
+
+                if targetGen then
+                    local promptObj = nil
+                    local promptPart = nil
+                    
+                    -- Nyari ProximityPrompt biar tau letak pastinya
+                    for _, v in ipairs(targetGen:GetDescendants()) do
+                        if v:IsA("ProximityPrompt") then 
+                            promptObj = v 
+                            promptPart = v.Parent
+                            break 
+                        end
+                    end
+
+                    local tpPart = promptPart or targetGen:FindFirstChildWhichIsA("BasePart")
+                    if tpPart then
+                        -- Teleport agak ke samping dan set velocity ke 0 biar gak kedorong
+                        if minDistance > 8 then 
+                            LocalPlayer.Character.HumanoidRootPart.CFrame = tpPart.CFrame * CFrame.new(0, 0, 3.5)
+                            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+                        end
+                    end
+
+                    if fireproximityprompt and promptObj then
+                        fireproximityprompt(promptObj)
+                    end
+                end
+            end
+
+            -- 4. AUTO SKILL CHECK
+            if (Config["Auto Skill Check [INSTAN]"] or Config["Auto Skill Check [LEGIT]"]) and not skillCheckDebounce then
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui and game:GetService("VirtualInputManager") then
+                    for _, sg in ipairs(playerGui:GetChildren()) do
+                        if sg:IsA("ScreenGui") and sg.Enabled then
+                            for _, ui in ipairs(sg:GetDescendants()) do
+                                if (ui:IsA("Frame") or ui:IsA("ImageLabel")) and ui.Visible then
+                                    local name = string.lower(ui.Name)
+                                    if name:find("skillcheck") or name:find("qte") then
+                                        skillCheckDebounce = true
+                                        task.spawn(function()
+                                            if Config["Auto Skill Check [LEGIT]"] then task.wait(0.2) end
+                                            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+        
