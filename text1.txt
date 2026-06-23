@@ -14,7 +14,7 @@ if CoreGui:FindFirstChild("KemantapanUI") then
     CoreGui.KemantapanUI:Destroy() 
 end
 
--- ==================== SISTEM REFRESH MAP (DIOPTIMALKAN) ====================
+-- ==================== SISTEM REFRESH MAP ====================
 local MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Items = {}}
 
 local function RefreshMapObjects()
@@ -33,7 +33,6 @@ local function RefreshMapObjects()
 end
 pcall(RefreshMapObjects) 
 
--- Helper: Ambil Progress Generator
 local function GetGenProgress(gen)
     local highest = 0
     pcall(function()
@@ -182,7 +181,7 @@ CreateToggle(TabESP, "Tampilkan Distance")
 
 CreateButton(TabSet, "Auto Save Config", function() if writefile then writefile("KMT_Config.txt", HttpService:JSONEncode(Config)) end end)
 
--- ==================== ENGINE ESP (DIPERBAIKI TEXTNYA) ====================
+-- ==================== ENGINE ESP ====================
 local function DrawESP(obj, textName, color, isEnabled, isPlayer, isGenerator)
     if not obj or not obj.Parent then return end 
     pcall(function()
@@ -205,7 +204,6 @@ local function DrawESP(obj, textName, color, isEnabled, isPlayer, isGenerator)
                 local showText = false
                 local finalText = ""
 
-                -- Logika Teks (Player dipertahankan, objek dikosongkan kecuali distance/persentase)
                 if isPlayer then
                     if Config["Tampilkan Nama (Hanya Player)"] then 
                         finalText = textName
@@ -246,7 +244,7 @@ local function DrawESP(obj, textName, color, isEnabled, isPlayer, isGenerator)
     end)
 end
 
--- ==================== BACKGROUND LOOP (ANTI-LAG) ====================
+-- ==================== BACKGROUND LOOP ====================
 RunService.Stepped:Connect(function()
     if not isRunning then return end
     pcall(function()
@@ -282,12 +280,12 @@ task.spawn(function()
                 end
             end
 
-            -- 2. ESP OBJECTS (Teks nama dihilangkan menggunakan string kosong "")
+            -- 2. ESP OBJECTS
             for _, gen in ipairs(MapObjects.Generators) do DrawESP(gen, "", Color3.fromRGB(255, 255, 0), Config["ESP Generator"], false, true) end
             for _, pal in ipairs(MapObjects.Pallets) do DrawESP(pal, "", Color3.fromRGB(255, 150, 0), Config["ESP Pallet"], false, false) end
             for _, win in ipairs(MapObjects.Windows) do DrawESP(win, "", Color3.fromRGB(0, 255, 255), Config["ESP Window"], false, false) end
 
-            -- 3. AUTO GEN RUSH (DIPERBAIKI UNTUK VIOLENT DISTRICT)
+            -- 3. AUTO GEN RUSH
             if Config["Auto Gen Rush (TP + Auto Fix)"] and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                 local myPos = LocalPlayer.Character.HumanoidRootPart.Position
                 local isKillerNear = killerPos and (myPos - killerPos).Magnitude < 40
@@ -310,28 +308,17 @@ task.spawn(function()
                 if targetGen then
                     local promptObj = nil
                     local promptPart = nil
-                    
-                    -- Nyari ProximityPrompt biar tau letak pastinya
                     for _, v in ipairs(targetGen:GetDescendants()) do
-                        if v:IsA("ProximityPrompt") then 
-                            promptObj = v 
-                            promptPart = v.Parent
-                            break 
-                        end
+                        if v:IsA("ProximityPrompt") then promptObj = v; promptPart = v.Parent; break end
                     end
-
                     local tpPart = promptPart or targetGen:FindFirstChildWhichIsA("BasePart")
                     if tpPart then
-                        -- Teleport agak ke samping dan set velocity ke 0 biar gak kedorong
                         if minDistance > 8 then 
                             LocalPlayer.Character.HumanoidRootPart.CFrame = tpPart.CFrame * CFrame.new(0, 0, 3.5)
                             LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
                         end
                     end
-
-                    if fireproximityprompt and promptObj then
-                        fireproximityprompt(promptObj)
-                    end
+                    if fireproximityprompt and promptObj then fireproximityprompt(promptObj) end
                 end
             end
 
@@ -349,4 +336,19 @@ task.spawn(function()
                                         task.spawn(function()
                                             if Config["Auto Skill Check [LEGIT]"] then task.wait(0.2) end
                                             game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-        
+                                            task.wait(0.05)
+                                            game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                                            task.wait(1.5)
+                                            skillCheckDebounce = false
+                                        end)
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
