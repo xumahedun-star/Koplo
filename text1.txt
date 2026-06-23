@@ -1,4 +1,4 @@
-Local CoreGui = game:GetService("CoreGui") or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+local CoreGui = game:GetService("CoreGui") or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
@@ -48,13 +48,23 @@ local function RefreshMapObjects()
             if LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character) then continue end
             if obj:FindFirstChildOfClass("Humanoid") then continue end
 
-            -- 1. DETEKSI WINDOWS / VAULTS (Fixed: 2 Target sesuai gambar)
-            if name == "window" and obj.Parent and string.lower(obj.Parent.Name) == "vaults" then
-                if not processed[obj] then
+            -- 1. DETEKSI WINDOWS / VAULTS (Opsi 1, 2, dan 3)
+            if name == "window" then
+                local parentName = obj.Parent and string.lower(obj.Parent.Name) or ""
+                
+                -- Opsi 1: Parent bernama "Vaults"
+                local isUnderVaults = (parentName == "vaults")
+                -- Opsi 3: Parent bernama "Map" (Sesuai gambar 1000031157.jpg)
+                local isUnderMap = (parentName == "map" or fullName:find("map"))
+                -- Opsi 2: Memiliki part VaultTrigger di dalamnya
+                local hasVaultTrigger = obj:FindFirstChild("VaultTrigger") or obj:FindFirstChild("vaulttrigger")
+
+                if (isUnderVaults or isUnderMap or hasVaultTrigger) and not processed[obj] then
                     table.insert(temp.Windows, obj)
                     processed[obj] = true
                 end
             elseif name == "vaulttrigger" or name == "vaultpoint" then
+                -- Fallback untuk Opsi 2
                 local targetWindow = obj.Parent
                 if targetWindow and not processed[targetWindow] then
                     table.insert(temp.Windows, targetWindow)
