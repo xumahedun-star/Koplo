@@ -7,7 +7,11 @@ local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
+
+-- Variable penampung data dari hasil spy log
+local lastGeneratorPoint = nil 
 
 -- ==================== NOTIFICATION SYSTEM ====================
 local function SendNotification(title, text, duration)
@@ -20,7 +24,7 @@ end
 local isRunning = true
 local Config = {} 
 local ToggleFunctions = {} 
-local ConfigFileName = "KemantapanHub_ConfigV9_12.json"
+local ConfigFileName = "KemantapanHub_ConfigV9_14.json"
 
 local function SaveConfig() pcall(function() if writefile then writefile(ConfigFileName, HttpService:JSONEncode(Config)) end end) end
 local function LoadConfig() pcall(function() if isfile and isfile(ConfigFileName) then local decoded = HttpService:JSONDecode(readfile(ConfigFileName)); if decoded then for k, v in pairs(decoded) do Config[k] = v end end end end) end
@@ -29,29 +33,28 @@ LoadConfig()
 
 if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() end
 
--- ==================== METATABLE HOOK (THE GOD MODE QTE) ====================
--- Ini "pos satpam" yang mencegat laporan QTE gagal dan mengubahnya jadi sukses
+-- ==================== METATABLE HOOK (THE GOD MODE QTE + LOGGER) ====================
 if hookmetamethod then
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
         local args = {...}
         
-        if isRunning and Config["Auto Skill Check [LEGIT]"] and method == "FireServer" then
+        if isRunning and method == "FireServer" then
             local remoteName = tostring(self)
             
-            -- Jika game mencoba lapor hasil QTE ke server
-            if remoteName == "SkillCheckResultEvent" then
-                -- Apapun yang terjadi (gagal/meleset), paksa ubah teksnya jadi success
-                if type(args[1]) == "string" then
-                    args[1] = "success" 
-                end
-                -- Paksa skor akurasi ke angka maksimum (1)
-                if type(args[2]) == "number" then
-                    args[2] = 1 
-                end
-                -- Teruskan laporan palsu ini ke server
+            -- 1. Auto Skill Check Legit
+            if Config["Auto Skill Check [LEGIT]"] and remoteName == "SkillCheckResultEvent" then
+                if type(args[1]) == "string" then args[1] = "success" end
+                if type(args[2]) == "number" then args[2] = 1 end
                 return oldNamecall(self, unpack(args))
+            end
+            
+            -- 2. Log Generator Point pas kita interaksi (Biar pas cancel targetnya akurat)
+            if remoteName == "RepairEvent" then
+                if args[2] == true and args[1] then
+                    lastGeneratorPoint = args[1]
+                end
             end
         end
         return oldNamecall(self, ...)
@@ -69,7 +72,7 @@ local function getSafePos(obj)
     return Vector3.new(0,0,0)
 end
 
--- ==================== MAP SCANNER + ANTI DUPLICATE ====================
+-- ==================== MAP SCANNER ====================
 local MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}}
 
 local function RefreshMapObjects()
@@ -251,7 +254,7 @@ BtnNo.MouseButton1Click:Connect(function() ConfirmOverlay.Visible = false end)
 BtnYes.MouseButton1Click:Connect(function() ResetConfig(); ConfirmOverlay.Visible = false; isRunning = false; ScreenGui:Destroy() end)
 
 local TitleBar = Instance.new("Frame", Main); TitleBar.Size = UDim2.new(1, 0, 0, 30); TitleBar.BackgroundColor3 = Color3.fromRGB(255, 215, 0); TitleBar.BorderSizePixel = 0
-local TitleText = Instance.new("TextLabel", TitleBar); TitleText.Size = UDim2.new(1, -40, 1, 0); TitleText.Position = UDim2.new(0, 10, 0, 0); TitleText.BackgroundTransparency = 1; TitleText.Text = "Kemantapan Hub | HOOK BYPASS V2"; TitleText.TextColor3 = Color3.fromRGB(15, 15, 15); TitleText.Font = Enum.Font.GothamBold; TitleText.TextSize = 13; TitleText.TextXAlignment = Enum.TextXAlignment.Left
+local TitleText = Instance.new("TextLabel", TitleBar); TitleText.Size = UDim2.new(1, -40, 1, 0); TitleText.Position = UDim2.new(0, 10, 0, 0); TitleText.BackgroundTransparency = 1; TitleText.Text = "Kemantapan Hub | PERFECT HOOK V3"; TitleText.TextColor3 = Color3.fromRGB(15, 15, 15); TitleText.Font = Enum.Font.GothamBold; TitleText.TextSize = 13; TitleText.TextXAlignment = Enum.TextXAlignment.Left
 local CloseBtn = Instance.new("TextButton", TitleBar); CloseBtn.Size = UDim2.new(0, 30, 1, 0); CloseBtn.Position = UDim2.new(1, -30, 0, 0); CloseBtn.BackgroundTransparency = 1; CloseBtn.Text = "X"; CloseBtn.TextColor3 = Color3.fromRGB(255, 50, 50); CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 16
 
 local Sidebar = Instance.new("Frame", Main); Sidebar.Size = UDim2.new(0, 120, 1, -30); Sidebar.Position = UDim2.new(0, 0, 0, 30); Sidebar.BackgroundColor3 = Color3.fromRGB(20, 20, 20); Sidebar.BorderSizePixel = 0
@@ -323,6 +326,7 @@ local InfoTxt = Instance.new("TextLabel", TabInfo); InfoTxt.Size = UDim2.new(1, 
 
 -- ==================== SURVIVOR MENU CONFIG ====================
 CreateToggle(TabSurv, "Auto Skill Check [LEGIT]")
+CreateToggle(TabSurv, "Anti-Stuck (Auto Cancel on Move)") -- JALANKAN LOG BARU LU DISINI
 CreateToggle(TabSurv, "Noclip (Tembus Tembok)")
 CreateInputToggle(TabSurv, "WalkSpeed", 20, function(state, value) Config["WalkSpeed Value"] = value end)
 
@@ -465,75 +469,99 @@ RunService.Stepped:Connect(function()
     end)
 end)
 
--- ==================== WALKSPEED SYSTEM ====================
+-- ==================== CHARACTER MODS (WALKSPEED & ANTI-STUCK BY REMOTES) ====================
 local wasWalkSpeedEnabled = false
 RunService.Heartbeat:Connect(function()
     if not isRunning then return end
     pcall(function()
-        local char = LocalPlayer.Character; local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            if Config["WalkSpeed"] then humanoid.WalkSpeed = Config["WalkSpeed Value"] or 20; wasWalkSpeedEnabled = true
-            elseif wasWalkSpeedEnabled then humanoid.WalkSpeed = 16; wasWalkSpeedEnabled = false end
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+        if hum then
+            -- WalkSpeed Logic
+            if Config["WalkSpeed"] then 
+                hum.WalkSpeed = Config["WalkSpeed Value"] or 20
+                wasWalkSpeedEnabled = true
+            elseif wasWalkSpeedEnabled then 
+                hum.WalkSpeed = 16
+                wasWalkSpeedEnabled = false 
+            end
+
+            -- SERVER-SIDE AUTO CANCEL (HASIL BEDAH LOG SPY LU, BRO!)
+            if Config["Anti-Stuck (Auto Cancel on Move)"] and hum.MoveDirection.Magnitude > 0 then
+                -- 1. Berhentiin status benerin generator secara paksa ke server
+                if lastGeneratorPoint then
+                    pcall(function()
+                        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                        local genRemote = remotes and remotes:FindFirstChild("Generator") and remotes.Generator:FindFirstChild("RepairEvent")
+                        local emoteRemote = remotes and remotes:FindFirstChild("EmoteHandler")
+                        
+                        if genRemote then
+                            genRemote:FireServer(lastGeneratorPoint, false) -- Kirim false (Berhenti)
+                        end
+                        if emoteRemote then
+                            emoteRemote:FireServer("StopEmote") -- Memutus paksa Animasi/Emote benerin gen
+                        end
+                    end)
+                    lastGeneratorPoint = nil -- Reset logger biar gak spam server
+                end
+
+                -- 2. Client-side backup (Biar ngelepasnya makin mulus tanpa delay)
+                if hrp and hrp.Anchored then hrp.Anchored = false end
+                if hum.PlatformStand then hum.PlatformStand = false end
+                if hum.Sit then hum.Sit = false end
+                if hum.WalkSpeed == 0 then
+                    hum.WalkSpeed = Config["WalkSpeed"] and (Config["WalkSpeed Value"] or 20) or 16
+                end
+            end
         end
     end)
 end)
 
--- ==================== INSTANT SERVER BYPASS QTE (FIXED) ====================
-local activeSkillChecks = {}
+-- ==================== FILTER & CLEAN AUTO SKILL CHECK (GOD MODE - DEBOUNCED) ====================
+local processedQTEs = {}
+local isClicking = false 
 
-local function HandleSkillCheck(ui)
-    if not isRunning then return end
-    if not Config["Auto Skill Check [LEGIT]"] then return end
+local function ExecuteClick()
+    if isClicking then return end 
+    isClicking = true
+    
+    task.spawn(function()
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+        end)
+        
+        task.wait(1) 
+        isClicking = false
+    end)
+end
+
+local function MonitorUI(ui)
     if not ui:IsA("GuiObject") then return end
-
     local uiName = string.lower(ui.Name)
+    
     if uiName:find("skill") or uiName:find("check") or uiName:find("qte") or uiName:find("circle") or uiName:find("hitpoint") then
-        local rootUI = ui
-        if ui.Parent:IsA("GuiObject") and (string.lower(ui.Parent.Name):find("skill") or string.lower(ui.Parent.Name):find("qte")) then
-            rootUI = ui.Parent
+        if processedQTEs[ui] then return end
+        processedQTEs[ui] = true
+        
+        if ui.Visible and isRunning and Config["Auto Skill Check [LEGIT]"] then 
+            ExecuteClick() 
         end
         
-        if activeSkillChecks[rootUI] then return end
-        activeSkillChecks[rootUI] = true
-
-        task.spawn(function()
-            task.wait(0.05) -- Jeda bentar biar terender oleh engine game
-            
-            -- Trik Gurumu: Simulasikan klik kilat
-            -- Kita tekan spasi/klik layar dengan sangat cepat. 
-            -- Karena dipencet terlalu cepat (belum masuk zona ijo), game menganggapnya GAGAL.
-            -- UI akan ditutup natural oleh game, lalu game melapor gagal ke server.
-            -- TAPI TENANG! Laporan gagal itu akan dicegat oleh HookMetamethod di atas dan diubah jadi Sukses.
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                task.wait(0.02)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-                
-                -- Jaga-jaga kalau gamenya pakai klik mouse bukan spasi
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-                task.wait(0.02)
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-            end)
-
-            -- Sembunyikan UI dan lempar ke luar layar. JANGAN PAKAI :Destroy()!
-            pcall(function()
-                if rootUI and rootUI.Parent then
-                    rootUI.Visible = false
-                    rootUI.Position = UDim2.new(10, 0, 10, 0)
-                end
-            end)
-            
-            task.wait(1.5)
-            activeSkillChecks[rootUI] = nil
+        ui:GetPropertyChangedSignal("Visible"):Connect(function()
+            if ui.Visible and isRunning and Config["Auto Skill Check [LEGIT]"] then
+                ExecuteClick()
+            end
         end)
     end
 end
 
 local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-playerGui.DescendantAdded:Connect(HandleSkillCheck)
-task.spawn(function()
-    for _, ui in ipairs(playerGui:GetDescendants()) do HandleSkillCheck(ui) end
-end)
+for _, child in ipairs(playerGui:GetDescendants()) do MonitorUI(child) end
+playerGui.DescendantAdded:Connect(MonitorUI)
 
 -- ==================== MAIN AUTOMATION LOOP ====================
 local staticUpdateCounter = 0
