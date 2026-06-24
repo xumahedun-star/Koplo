@@ -29,7 +29,7 @@ LoadConfig()
 
 if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() end
 
--- ==================== ADVANCED NAME-PATTERN SCANNER ====================
+-- ==================== ADVANCED NAME-PATTERN SCANNER (OPTIMIZED) ====================
 local MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}}
 
 local function RefreshMapObjects()
@@ -38,8 +38,11 @@ local function RefreshMapObjects()
     local processed = {}
     
     pcall(function()
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if not obj or processed[obj] then continue end
+        local allDescendants = Workspace:GetDescendants()
+        -- Membagi proses scan agar tidak membekukan game (FPS Drop)
+        for i, obj in ipairs(allDescendants) do
+            if i % 150 == 0 then task.wait() end -- Kasih jeda napas buat CPU
+            if not obj or not obj.Parent or processed[obj] then continue end
             
             local name = string.lower(obj.Name or "")
             local fullName = string.lower(obj:GetFullName())
@@ -48,29 +51,16 @@ local function RefreshMapObjects()
             if LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character) then continue end
             if obj:FindFirstChildOfClass("Humanoid") then continue end
 
-            -- 1. DETEKSI WINDOWS / VAULTS (Opsi 1, 2, 3, dan 4)
-            if name == "window" then
-                local parentName = obj.Parent and string.lower(obj.Parent.Name) or ""
+            -- 1. DETEKSI WINDOWS / VAULTS
+            if obj:IsA("Model") and (name == "window" or name == "windows") then
+                local bottomPart = obj:FindFirstChild("Bottom")
+                local hasVault = obj:FindFirstChild("VaultTrigger") or obj:FindFirstChild("vaulttrigger")
                 
-                -- Opsi 1: Parent bernama "Vaults"
-                local isUnderVaults = (parentName == "vaults")
-                -- Opsi 2: Memiliki part VaultTrigger di dalamnya
-                local hasVaultTrigger = obj:FindFirstChild("VaultTrigger") or obj:FindFirstChild("vaulttrigger")
-                -- Opsi 3: Parent bernama "Map" (Sesuai gambar 1000031157.jpg)
-                local isUnderMap = (parentName == "map" or fullName:find("map"))
-                -- Opsi 4: Parent memiliki nama "Maze" seperti Maze, Maze1, Maze2 (Sesuai gambar 1000031158.jpg)
-                local isUnderMaze = parentName:find("maze")
-
-                if (isUnderVaults or isUnderMap or hasVaultTrigger or isUnderMaze) and not processed[obj] then
-                    table.insert(temp.Windows, obj)
-                    processed[obj] = true
-                end
-            elseif name == "vaulttrigger" or name == "vaultpoint" then
-                -- Fallback untuk Opsi 2
-                local targetWindow = obj.Parent
-                if targetWindow and not processed[targetWindow] then
-                    table.insert(temp.Windows, targetWindow)
-                    processed[targetWindow] = true
+                if bottomPart and bottomPart:IsA("BasePart") and hasVault then
+                    if not processed[bottomPart] then
+                        table.insert(temp.Windows, bottomPart)
+                        processed[bottomPart] = true
+                    end
                 end
                 
             -- 2. DETEKSI ESCAPE GATES
@@ -99,7 +89,7 @@ local function RefreshMapObjects()
 end
 
 pcall(RefreshMapObjects)
-task.spawn(function() while isRunning do task.wait(2.5); RefreshMapObjects() end end)
+task.spawn(function() while isRunning do task.wait(5); RefreshMapObjects() end end) -- Diturunkan ke 5 detik agar enteng
 
 local function GetGenProgress(gen)
     local highest = 0
@@ -316,24 +306,28 @@ local function AddMapBtn(title, callback)
     Btn.MouseButton1Click:Connect(function() pcall(callback) end)
 end
 
--- FIXED LOGIC TP GENERATOR (1-7 DIJAMIN AKTIF SEMUA)
 for i = 1, 7 do 
     AddMapBtn("TP Generator " .. i, function() 
         pcall(function() 
-            local validGens = {}
-            if MapObjects.Generators then
-                for _, g in ipairs(MapObjects.Generators) do
-                    if g then
-                        local part = g:IsA("BasePart") and g or g.PrimaryPart or g:FindFirstChildWhichIsA("BasePart", true)
-                        if part then table.insert(validGens, part) end
+            local gens = MapObjects.Generators
+            if gens and #gens > 0 then
+                local index = ((i - 1) % #gens) + 1
+                local targetGen = gens[index]
+                if targetGen then
+                    local tpPos
+                    if targetGen:IsA("Model") then
+                        tpPos = targetGen:GetPivot().Position
+                    elseif targetGen:IsA("BasePart") then
+                        tpPos = targetGen.Position
+                    else
+                        local bp = targetGen:FindFirstChildWhichIsA("BasePart", true)
+                        if bp then tpPos = bp.Position end
                     end
-                end
-            end
-            if #validGens > 0 then
-                local targetIndex = ((i - 1) % #validGens) + 1
-                local tpPart = validGens[targetIndex]
-                if tpPart then 
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(tpPart.Position + Vector3.new(0, 4, 0)) 
+                    
+                    if tpPos then
+                        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(tpPos + Vector3.new(0, 6, 0))
+                        LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+                    end
                 end
             end
         end) 
@@ -349,19 +343,55 @@ CreateScriptButton(TabSet, "Rejoin Server Current", function() SendNotification(
 CreateScriptButton(TabSet, "🌐 Find New Server (Fast)", function() FetchAndHop("Normal") end, Color3.fromRGB(40, 40, 150))
 CreateScriptButton(TabSet, "📉 Find Small Server (Sepi)", function() FetchAndHop("Small") end, Color3.fromRGB(139, 69, 19))
 
--- ==================== ENGINE ESP Core ====================
-local function DrawESP(obj, color, isEnabled, isPlayer, isGenerator, textNamePlayer)
+-- ==================== ENGINE ESP Core (OPTIMIZED) ====================
+local function DrawESP(obj, color, isEnabled, isPlayer, isGenerator, textNamePlayer, isWindow)
     pcall(function()
         if not obj or not obj.Parent then return end
+        
         local targetPart = obj:IsA("BasePart") and obj or obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart", true)
         if not targetPart then targetPart = obj end
 
-        local highlight = obj:FindFirstChild("KM_ESP") or targetPart:FindFirstChild("KM_ESP")
+        if isWindow then targetPart = obj end
+
+        local useBoxESP = isWindow
+        local espVisual
+
+        if useBoxESP then
+            espVisual = targetPart:FindFirstChild("KM_ESP_BOX")
+        else
+            espVisual = obj:FindFirstChild("KM_ESP") or targetPart:FindFirstChild("KM_ESP")
+        end
+
         local textLabelGui = targetPart:FindFirstChild("KM_TXT") or obj:FindFirstChild("KM_TXT")
 
         if isEnabled then
-            if not highlight then highlight = Instance.new("Highlight"); highlight.Name = "KM_ESP"; highlight.FillTransparency = 0.5; highlight.Parent = obj:IsA("Model") and obj or targetPart end
-            highlight.FillColor = color; highlight.OutlineColor = color; highlight.Enabled = true
+            if not espVisual then 
+                if useBoxESP then
+                    espVisual = Instance.new("BoxHandleAdornment")
+                    espVisual.Name = "KM_ESP_BOX"
+                    espVisual.Parent = targetPart
+                    espVisual.Adornee = targetPart
+                    espVisual.AlwaysOnTop = true
+                    espVisual.ZIndex = 10
+                    espVisual.Size = targetPart.Size + Vector3.new(0.05, 0.05, 0.05)
+                    espVisual.Transparency = 0.5
+                else
+                    espVisual = Instance.new("Highlight")
+                    espVisual.Name = "KM_ESP"
+                    espVisual.FillTransparency = 0.5
+                    espVisual.Parent = obj:IsA("Model") and obj or targetPart
+                    espVisual.Adornee = obj:IsA("Model") and obj or targetPart
+                end
+            end
+            
+            if useBoxESP then
+                espVisual.Color3 = color
+                espVisual.Visible = true
+            else
+                espVisual.FillColor = color
+                espVisual.OutlineColor = color
+                espVisual.Enabled = true
+            end
 
             local showText = false
             local finalText = ""
@@ -390,7 +420,8 @@ local function DrawESP(obj, color, isEnabled, isPlayer, isGenerator, textNamePla
                 if textLabelGui then textLabelGui.Enabled = false end
             end
         else
-            if highlight then highlight:Destroy() end
+            -- Membersihkan object sisa agar tidak bikin lag / RAM penuh
+            if espVisual then espVisual:Destroy() end
             if textLabelGui then textLabelGui:Destroy() end
         end
     end)
@@ -424,7 +455,7 @@ RunService.Heartbeat:Connect(function()
     end)
 end)
 
--- ==================== MOBILE QTE FIX (EVENT-BASED & SANGAT RINGAN) ====================
+-- ==================== MOBILE QTE FIX ====================
 local activeSkillChecks = {}
 local function HandleSkillCheck(ui)
     if not isRunning then return end
@@ -464,15 +495,20 @@ end
 local playerGui = LocalPlayer:WaitForChild("PlayerGui")
 playerGui.DescendantAdded:Connect(HandleSkillCheck)
 
-for _, ui in ipairs(playerGui:GetDescendants()) do
-    HandleSkillCheck(ui)
-end
+-- Throttled initial UI check agar tidak patah saat pertama run
+task.spawn(function()
+    local descendants = playerGui:GetDescendants()
+    for i, ui in ipairs(descendants) do
+        if i % 100 == 0 then task.wait() end
+        HandleSkillCheck(ui)
+    end
+end)
 
--- ==================== MAIN AUTOMATION LOOP ====================
+-- ==================== MAIN AUTOMATION LOOP (DITINGKATKAN MENJADI 0.1s BIAR RINGAN) ====================
 local currentGenPrompt = nil
 
 task.spawn(function()
-    while task.wait(0.05) do 
+    while task.wait(0.1) do  -- Diubah ke 0.1 agar memotong 50% beban kerja CPU tanpa mengurangi akurasi
         if not isRunning then break end 
         
         -- ESP Renders
@@ -489,7 +525,7 @@ task.spawn(function()
 
         if MapObjects.Generators then for _, gen in ipairs(MapObjects.Generators) do pcall(function() DrawESP(gen, Color3.fromRGB(255, 255, 0), Config["ESP Generator"], false, true, "") end) end end
         if MapObjects.Pallets then for _, pal in ipairs(MapObjects.Pallets) do pcall(function() DrawESP(pal, Color3.fromRGB(255, 150, 0), Config["ESP Pallet"], false, false, "") end) end end
-        if MapObjects.Windows then for _, win in ipairs(MapObjects.Windows) do pcall(function() DrawESP(win, Color3.fromRGB(0, 255, 255), Config["ESP Window"], false, false, "") end) end end
+        if MapObjects.Windows then for _, win in ipairs(MapObjects.Windows) do pcall(function() DrawESP(win, Color3.fromRGB(0, 255, 255), Config["ESP Window"], false, false, "", true) end) end end
         if MapObjects.Gates then for _, gate in ipairs(MapObjects.Gates) do pcall(function() DrawESP(gate, Color3.fromRGB(255, 0, 255), Config["ESP Gate"], false, false, "") end) end end
 
         -- AUTO TP & GEN RUSH LOGIC
