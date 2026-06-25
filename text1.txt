@@ -67,41 +67,18 @@ local function SendWebhook(webhookUrl, isTest)
     local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
     if not requestFunc then SendNotification("Error", "Executor tidak support Webhook.", 3); return end
 
-    local function getStat(statNames)
-        local result = "Tidak Detek"
-        pcall(function()
-            for _, name in ipairs(statNames) do
-                -- 1. Cari di Attribute dulu (Prioritas Game Modern)
-                local attr = LocalPlayer:GetAttribute(name)
-                if attr ~= nil then 
-                    result = tostring(attr)
-                    return
-                end
-                
-                -- 2. Cari di Folder secara spesifik (CUMA ambil angka, tolak item/tool)
-                local hiddenFolders = {"leaderstats", "Data", "Stats", "Currencies", "Total"}
-                for _, folderName in ipairs(hiddenFolders) do
-                    local folder = LocalPlayer:FindFirstChild(folderName)
-                    if folder then
-                        local stat = folder:FindFirstChild(name)
-                        if stat and (stat:IsA("IntValue") or stat:IsA("NumberValue") or stat:IsA("StringValue")) then
-                            result = tostring(stat.Value)
-                            return
-                        end
-                    end
-                end
-            end
-        end)
-        return result
-    end
-
-    local lvl = getStat({"Level", "Lvl", "Rank"})
-    -- HANYA mencari Total EXP, menghapus kemungkinan ngambil Current Exp
-    local exp = getStat({"TotalExp", "TotalExperience", "TotalEXP", "Total Exp"}) 
-    local gears = getStat({"Gears", "Gear", "Silver", "Koin"})
-    local screw = getStat({"Screws", "Screw", "Baut", "Parts"})
-    local sin = getStat({"Sin", "Sins", "TotalSin"}) 
-    if sin == "Tidak Detek" then sin = "Hidden" end
+    local lvl, exp, gears, screw, killerChance = "Tidak Detek", "Tidak Detek", "Tidak Detek", "Tidak Detek", "Hidden"
+    
+    pcall(function()
+        local InfoFolder = LocalPlayer.PlayerGui:FindFirstChild("Spectator") and LocalPlayer.PlayerGui.Spectator:FindFirstChild("Info")
+        if InfoFolder then
+            if InfoFolder:FindFirstChild("Level", true) then lvl = tostring(InfoFolder:FindFirstChild("Level", true).Text) end
+            if InfoFolder:FindFirstChild("Exp", true) then exp = tostring(InfoFolder:FindFirstChild("Exp", true).Text) end
+            if InfoFolder:FindFirstChild("Gears", true) then gears = tostring(InfoFolder:FindFirstChild("Gears", true).Text) end
+            if InfoFolder:FindFirstChild("Screws", true) then screw = tostring(InfoFolder:FindFirstChild("Screws", true).Text) end
+            if InfoFolder:FindFirstChild("KillerChance", true) then killerChance = tostring(InfoFolder:FindFirstChild("KillerChance", true).Text) end
+        end
+    end)
 
     local embedData = {
         ["title"] = isTest and "🔧 TEST WEBHOOK" or "📊 Statistik Auto Farm",
@@ -113,7 +90,7 @@ local function SendWebhook(webhookUrl, isTest)
             {["name"] = "⭐ Total EXP", ["value"] = exp, ["inline"] = true},
             {["name"] = "⚙️ Gears", ["value"] = gears, ["inline"] = true},
             {["name"] = "🔩 Screws", ["value"] = screw, ["inline"] = true},
-            {["name"] = "💀 Total Sin", ["value"] = sin, ["inline"] = false}
+            {["name"] = "💀 Killer Chance", ["value"] = killerChance, ["inline"] = false}
         },
         ["footer"] = {["text"] = "Kemantapan Hub Script | Violent District"}
     }
@@ -1356,7 +1333,7 @@ task.spawn(function()
         
         elseif autoFarmStatus == "WAITING_SPECTATOR" then
             if teamName:find("spectator") or teamName:find("lobby") or teamName:find("menu") then
-                SendNotification("Auto Farm", "Jadi Spectator! Delay 1.5 detik...", 3)
+                SendNotification("Auto Farm", "Jadi Spectator! Delay 5 detik...", 3)
                 autoFarmStatus = "DELAY_BEFORE_HOP"
                 autoFarmWaitTime = tick()
             elseif tick() - autoFarmWaitTime >= 20 then 
@@ -1367,7 +1344,7 @@ task.spawn(function()
             end
             
         elseif autoFarmStatus == "DELAY_BEFORE_HOP" then
-            if tick() - autoFarmWaitTime >= 1.5 then
+            if tick() - autoFarmWaitTime >= 5 then
                 if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
                     SendWebhook(Config["Webhook Auto Farm Value"], false)
                 end
