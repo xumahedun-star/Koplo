@@ -48,52 +48,59 @@ if Config["Webhook Auto Farm"] == nil then Config["Webhook Auto Farm"] = false e
 
 if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() end
 
--- ==================== WEBHOOK SENDER SYSTEM (SMART SCANNER) ====================
+-- ==================== WEBHOOK SENDER SYSTEM (BRUTE FORCE SCANNER) ====================
 local function SendWebhook(webhookUrl, isTest)
     if not webhookUrl or webhookUrl == "" or webhookUrl == "URL_DISINI" then return end
     local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
     if not requestFunc then SendNotification("Error", "Executor tidak support Webhook.", 3); return end
 
-    -- Smart Scanner: Deteksi data spesifik dari foto secara akurat
+    -- Smart Scanner: Deteksi data spesifik dari folder, atribut, dan leaderstats
     local function getStat(statName, altNames)
         local namesToCheck = {statName}
         if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
         
-        -- 1. Cek Attributes (Biasanya Violent District nyimpen data disini)
+        -- 1. Cek Folder Data Tersembunyi (Sering dipake dev untuk nyimpen currency)
+        local hiddenFolders = {"Data", "Stats", "leaderstats", "Currencies", "PlayerStats"}
+        for _, folderName in ipairs(hiddenFolders) do
+            local folder = LocalPlayer:FindFirstChild(folderName)
+            if folder then
+                for _, name in ipairs(namesToCheck) do
+                    local stat = folder:FindFirstChild(name)
+                    if stat then return tostring(stat.Value) end
+                end
+            end
+        end
+
+        -- 2. Cek Attributes
         for _, name in ipairs(namesToCheck) do
             local attr = LocalPlayer:GetAttribute(name)
             if attr ~= nil then return tostring(attr) end
         end
-        
-        -- 2. Cek Leaderstats
-        local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-        if leaderstats then
-            for _, name in ipairs(namesToCheck) do
-                if leaderstats:FindFirstChild(name) then return tostring(leaderstats[name].Value) end
-            end
-        end
 
-        -- 3. Mode Mata Elang: Cari kemiripan nama di Attributes (Case-Insensitive)
+        -- 3. Mode Brutal: Cari kemiripan nama di Attributes
         for attrName, attrValue in pairs(LocalPlayer:GetAttributes()) do
             if attrName:lower():find(statName:lower()) then return tostring(attrValue) end
         end
 
-        -- 4. Mode Mata Elang: Cari kemiripan nama di Leaderstats (Case-Insensitive)
-        if leaderstats then
-            for _, child in ipairs(leaderstats:GetChildren()) do
-                if child.Name:lower():find(statName:lower()) then return tostring(child.Value) end
+        -- 4. Mode Brutal: Cari kemiripan nama di semua folder stats
+        for _, folderName in ipairs(hiddenFolders) do
+            local folder = LocalPlayer:FindFirstChild(folderName)
+            if folder then
+                for _, child in ipairs(folder:GetChildren()) do
+                    if child.Name:lower():find(statName:lower()) then return tostring(child.Value) end
+                end
             end
         end
 
-        return "N/A"
+        return "Tidak Detek"
     end
 
-    local lvl = getStat("Level", {"Lvl"})
+    local lvl = getStat("Level", {"Lvl", "Rank"})
     local exp = getStat("EXP", {"Exp", "Experience"})
-    local gears = getStat("Gears", {"Gear"})
-    local screw = getStat("Screws", {"Screw", "Baut"})
-    -- Target sin diperluas sesuai nama spesifik di dalam game
-    local sin = getStat("Sin", {"Sins", "TotalSin", "Merah", "Tengkorak", "Points", "Tokens", "Total Sins"}) 
+    local gears = getStat("Gears", {"Gear", "Silver", "Koin"})
+    local screw = getStat("Screws", {"Screw", "Baut", "Parts"})
+    -- Target sin diperluas dengan alias nama developer paling umum
+    local sin = getStat("Sin", {"Sins", "TotalSin", "Total Sins", "RedToken", "RedTokens", "RedSkull", "Bloodpoints", "Blood", "Evil", "Merah", "Tengkorak"}) 
 
     local embedData = {
         ["title"] = isTest and "🔧 TEST WEBHOOK" or "📊 Statistik Auto Farm",
@@ -367,7 +374,7 @@ local TitleText = Instance.new("TextLabel", TitleBar)
 TitleText.Size = UDim2.new(1, -40, 1, 0)
 TitleText.Position = UDim2.new(0, 10, 0, 0)
 TitleText.BackgroundTransparency = 1
-TitleText.Text = "Kemantapan Hub | V30 (Auto Farm & Webhook)"
+TitleText.Text = "Kemantapan Hub | V31 (WebHook Fix + Delay EXP)"
 TitleText.TextColor3 = Color3.fromRGB(15, 15, 15)
 TitleText.Font = Enum.Font.GothamBold
 TitleText.TextSize = 12
@@ -1248,7 +1255,7 @@ task.spawn(function()
     end
 end)
 
--- ==================== AUTO FARM SURVIVOR (TIMING REWORKED) ====================
+-- ==================== AUTO FARM SURVIVOR (DELAY EXP FIX) ====================
 local autoFarmWaitTime = 0
 local autoFarmStatus = "IDLE"
 
@@ -1317,17 +1324,21 @@ task.spawn(function()
             end
         elseif autoFarmStatus == "WAITING_WIN" then
             if teamName:find("spectator") or teamName:find("lobby") or teamName:find("menu") then
-                SendNotification("Auto Farm", "Win! Hopping next server...", 3)
-                
-                if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
-                    SendWebhook(Config["Webhook Auto Farm Value"], false)
-                end
-
+                SendNotification("Auto Farm", "Win! Tunggu 1.5 detik utk EXP...", 3)
+                autoFarmStatus = "DELAY_BEFORE_HOP"
+                autoFarmWaitTime = tick()
+            elseif tick() - autoFarmWaitTime >= 7 then
+                SendNotification("Auto Farm", "Bug terdeteksi! Hopping...", 3)
                 autoFarmStatus = "HOPPING"
                 autoFarmWaitTime = tick()
                 FetchAndHop("Small")
-            elseif tick() - autoFarmWaitTime >= 7 then
-                SendNotification("Auto Farm", "Bug terdeteksi! Hopping...", 3)
+            end
+        elseif autoFarmStatus == "DELAY_BEFORE_HOP" then
+            if tick() - autoFarmWaitTime >= 1.5 then
+                if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
+                    SendWebhook(Config["Webhook Auto Farm Value"], false)
+                end
+                SendNotification("Auto Farm", "EXP Masuk! Mengirim Webhook & Hopping...", 3)
                 autoFarmStatus = "HOPPING"
                 autoFarmWaitTime = tick()
                 FetchAndHop("Small")
