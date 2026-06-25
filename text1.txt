@@ -50,36 +50,36 @@ local function SendWebhook(webhookUrl, isTest)
     local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
     if not requestFunc then SendNotification("Error", "Executor tidak support Webhook (HTTP Request).", 4); return end
 
-    local function getStat(statName, altNames)
-        local namesToCheck = {statName}
-        if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
-        
-        for _, name in ipairs(namesToCheck) do
-            local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-            if leaderstats and leaderstats:FindFirstChild(name) then return tostring(leaderstats[name].Value) end
-            local attr = LocalPlayer:GetAttribute(name)
-            if attr then return tostring(attr) end
-        end
-        return "N/A"
-    end
+    local embedFields = {
+        {["name"] = "👤 Username", ["value"] = "```" .. LocalPlayer.Name .. "```", ["inline"] = false}
+    }
 
-    local lvl = getStat("Level", {"Lvl"})
-    local screw = getStat("Screw", {"Screws", "Baut", "TotalScrew"})
-    local medal = getStat("Medal", {"Medals", "Exp", "Matahari", "TotalMedal"})
-    local sin = getStat("Sin", {"Sins", "Tengkorak", "Merah", "TotalSin"})
+    local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+    
+    if leaderstats then
+        for _, stat in ipairs(leaderstats:GetChildren()) do
+            if stat:IsA("IntValue") or stat:IsA("NumberValue") or stat:IsA("StringValue") then
+                table.insert(embedFields, {
+                    ["name"] = "📊 " .. stat.Name,
+                    ["value"] = "```" .. tostring(stat.Value) .. "```",
+                    ["inline"] = true
+                })
+            end
+        end
+    else
+        table.insert(embedFields, {
+            ["name"] = "⚠️ Peringatan",
+            ["value"] = "```Folder leaderstats tidak ditemukan di player ini.```",
+            ["inline"] = false
+        })
+    end
 
     local embedData = {
         ["title"] = isTest and "🔧 TEST WEBHOOK AUTO FARM" or "🏆 AUTO FARM BERHASIL ESCAPE!",
-        ["description"] = "Data player berhasil di-update dari game Violent District.",
+        ["description"] = "Data otomatis ditarik dari leaderstats Violent District.",
         ["color"] = isTest and 16776960 or 65280, 
-        ["fields"] = {
-            {["name"] = "👤 Username", ["value"] = "```" .. LocalPlayer.Name .. "```", ["inline"] = false},
-            {["name"] = "⭐ Level", ["value"] = "```" .. lvl .. "```", ["inline"] = true},
-            {["name"] = "🔩 Total Screw", ["value"] = "```" .. screw .. "```", ["inline"] = true},
-            {["name"] = "🌞 Total Medal", ["value"] = "```" .. medal .. "```", ["inline"] = true},
-            {["name"] = "💀 Total Sin", ["value"] = "```" .. sin .. "```", ["inline"] = true}
-        },
-        ["footer"] = {["text"] = "Kemantapan Hub Auto Farm V30"}
+        ["fields"] = embedFields,
+        ["footer"] = {["text"] = "Kemantapan Hub Auto Farm V30 (Dynamic Leaderstats)"}
     }
 
     local payload = HttpService:JSONEncode({content = "", embeds = {embedData}})
