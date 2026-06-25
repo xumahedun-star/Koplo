@@ -40,8 +40,56 @@ if Config["Auto Skill Check [LEGIT]"] == nil then Config["Auto Skill Check [LEGI
 if Config["Auto Gen (Fire Instan)"] == nil then Config["Auto Gen (Fire Instan)"] = false end
 if Config["Auto Gen (Metata)"] == nil then Config["Auto Gen (Metata)"] = false end
 if Config["Auto Farm Survivor (Auto Win)"] == nil then Config["Auto Farm Survivor (Auto Win)"] = false end
+if Config["Webhook Auto Farm"] == nil then Config["Webhook Auto Farm"] = false end
 
 if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() end
+
+-- ==================== WEBHOOK SENDER SYSTEM ====================
+local function SendWebhook(webhookUrl, isTest)
+    if not webhookUrl or webhookUrl == "" or webhookUrl == "URL_DISINI" then return end
+    local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
+    if not requestFunc then SendNotification("Error", "Executor tidak support Webhook (HTTP Request).", 4); return end
+
+    local function getStat(statName, altNames)
+        local namesToCheck = {statName}
+        if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
+        
+        for _, name in ipairs(namesToCheck) do
+            local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+            if leaderstats and leaderstats:FindFirstChild(name) then return tostring(leaderstats[name].Value) end
+            local attr = LocalPlayer:GetAttribute(name)
+            if attr then return tostring(attr) end
+        end
+        return "N/A"
+    end
+
+    local lvl = getStat("Level", {"Lvl"})
+    local screw = getStat("Screw", {"Screws", "Baut", "TotalScrew"})
+    local medal = getStat("Medal", {"Medals", "Exp", "Matahari", "TotalMedal"})
+    local sin = getStat("Sin", {"Sins", "Tengkorak", "Merah", "TotalSin"})
+
+    local embedData = {
+        ["title"] = isTest and "🔧 TEST WEBHOOK AUTO FARM" or "🏆 AUTO FARM BERHASIL ESCAPE!",
+        ["description"] = "Data player berhasil di-update dari game Violent District.",
+        ["color"] = isTest and 16776960 or 65280, 
+        ["fields"] = {
+            {["name"] = "👤 Username", ["value"] = "```" .. LocalPlayer.Name .. "```", ["inline"] = false},
+            {["name"] = "⭐ Level", ["value"] = "```" .. lvl .. "```", ["inline"] = true},
+            {["name"] = "🔩 Total Screw", ["value"] = "```" .. screw .. "```", ["inline"] = true},
+            {["name"] = "🌞 Total Medal", ["value"] = "```" .. medal .. "```", ["inline"] = true},
+            {["name"] = "💀 Total Sin", ["value"] = "```" .. sin .. "```", ["inline"] = true}
+        },
+        ["footer"] = {["text"] = "Kemantapan Hub Auto Farm V30"}
+    }
+
+    local payload = HttpService:JSONEncode({content = "", embeds = {embedData}})
+
+    task.spawn(function()
+        pcall(function()
+            requestFunc({Url = webhookUrl, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = payload})
+        end)
+    end)
+end
 
 -- ==================== METATABLE HOOKS ====================
 if hookmetamethod then
@@ -161,14 +209,20 @@ local function GetGenProgress(gen)
     return highest
 end
 
--- ==================== UI & SERVER HOP SETUP ====================
+-- ==================== UI & SERVER HOP SETUP (WITH AUTO-RETRY) ====================
 local isHopping = false
+
+-- DETEKSI KALAU TELEPORT GAGAL DARI ROBLOX
+TeleportService.TeleportInitFailed:Connect(function()
+    isHopping = false
+end)
+
 local function FetchAndHop(mode)
     if isHopping then return end
     isHopping = true
     task.spawn(function()
         local ApiUrl = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?limit=100&sortOrder=" .. (mode == "Small" and "Asc" or "Desc")
-        local requestFunc = syn and syn.request or http_request or request
+        local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
         if not requestFunc then SendNotification("Error", "Executor tidak support HTTP request.", 4); isHopping = false; return end
         
         local success, response = pcall(function() return requestFunc({Url = ApiUrl, Method = "GET"}) end)
@@ -187,9 +241,14 @@ local function FetchAndHop(mode)
                     end
                     SendNotification("Hop Server", "Menyambungkan ke Server Baru...", 4)
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[1].id, LocalPlayer)
-                else SendNotification("Gagal", "Tidak nemu server yang cocok saat ini.", 4) end
+                    
+                    task.wait(4) -- Kasih waktu 4 detik, kalau masih belum pindah berarti nyangkut
+                    isHopping = false 
+                    return
+                end
             end
         end
+        -- Kalau sampai di sini berarti gagal fetch/nggak ada server
         isHopping = false
     end)
 end
@@ -217,7 +276,7 @@ BtnNo.MouseButton1Click:Connect(function() ConfirmOverlay.Visible = false end)
 BtnYes.MouseButton1Click:Connect(function() ResetConfig(); ConfirmOverlay.Visible = false; getgenv().KemantapanBot_Active = false; ScreenGui:Destroy() end)
 
 local TitleBar = Instance.new("Frame", Main); TitleBar.Size = UDim2.new(1, 0, 0, 30); TitleBar.BackgroundColor3 = Color3.fromRGB(255, 215, 0); TitleBar.BorderSizePixel = 0
-local TitleText = Instance.new("TextLabel", TitleBar); TitleText.Size = UDim2.new(1, -40, 1, 0); TitleText.Position = UDim2.new(0, 10, 0, 0); TitleText.BackgroundTransparency = 1; TitleText.Text = "Kemantapan Hub | V30 (Auto Farm & Anti-Glitch Lobby)"; TitleText.TextColor3 = Color3.fromRGB(15, 15, 15); TitleText.Font = Enum.Font.GothamBold; TitleText.TextSize = 12; TitleText.TextXAlignment = Enum.TextXAlignment.Left
+local TitleText = Instance.new("TextLabel", TitleBar); TitleText.Size = UDim2.new(1, -40, 1, 0); TitleText.Position = UDim2.new(0, 10, 0, 0); TitleText.BackgroundTransparency = 1; TitleText.Text = "Kemantapan Hub | V30 (Auto Farm & Webhook)"; TitleText.TextColor3 = Color3.fromRGB(15, 15, 15); TitleText.Font = Enum.Font.GothamBold; TitleText.TextSize = 12; TitleText.TextXAlignment = Enum.TextXAlignment.Left
 local CloseBtn = Instance.new("TextButton", TitleBar); CloseBtn.Size = UDim2.new(0, 30, 1, 0); CloseBtn.Position = UDim2.new(1, -30, 0, 0); CloseBtn.BackgroundTransparency = 1; CloseBtn.Text = "X"; CloseBtn.TextColor3 = Color3.fromRGB(255, 50, 50); CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 16
 
 local Sidebar = Instance.new("Frame", Main); Sidebar.Size = UDim2.new(0, 120, 1, -30); Sidebar.Position = UDim2.new(0, 0, 0, 30); Sidebar.BackgroundColor3 = Color3.fromRGB(20, 20, 20); Sidebar.BorderSizePixel = 0
@@ -270,6 +329,23 @@ local function CreateInputToggle(parent, title, defaultInput, callback)
     if Config[title] == true then task.spawn(function() setInputToggleState(true, tonumber(InputBox.Text) or defaultInput) end) end
 end
 
+local function CreateStringInputToggle(parent, title, defaultInput, callback)
+    local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -10, 0, 30); Container.BackgroundTransparency = 1
+    local Lbl = Instance.new("TextLabel", Container); Lbl.Size = UDim2.new(0.35, 0, 1, 0); Lbl.BackgroundTransparency = 1; Lbl.Text = "  " .. title; Lbl.TextColor3 = Color3.fromRGB(220, 220, 220); Lbl.Font = Enum.Font.Gotham; Lbl.TextSize = 11; Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local InputBox = Instance.new("TextBox", Container); InputBox.Size = UDim2.new(0, 60, 0, 22); InputBox.Position = UDim2.new(0.40, 0, 0.5, -11); InputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30); InputBox.TextColor3 = Color3.fromRGB(255, 255, 255); InputBox.Text = tostring(Config[title .. " Value"] or defaultInput); InputBox.Font = Enum.Font.Gotham; InputBox.TextSize = 10; InputBox.TextScaled = true; Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 4)
+    local Btn = Instance.new("TextButton", Container); Btn.Size = UDim2.new(0, 70, 0, 22); Btn.Position = UDim2.new(1, -80, 0.5, -11); Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35); Btn.Text = "OFF"; Btn.TextColor3 = Color3.fromRGB(255, 100, 100); Btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    if Config[title] == nil then Config[title] = false end
+    local function setInputToggleState(state, val)
+        Config[title] = state; Config[title .. " Value"] = val; Btn.Text = state and "ON" or "OFF"; Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35); Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
+        if callback then pcall(function() callback(state, val) end) end
+    end
+    Btn.MouseButton1Click:Connect(function() setInputToggleState(not Config[title], InputBox.Text) end)
+    InputBox:GetPropertyChangedSignal("Text"):Connect(function()
+        Config[title .. " Value"] = InputBox.Text; if Config[title] and callback then pcall(function() callback(true, InputBox.Text) end) end
+    end)
+    if Config[title] == true then task.spawn(function() setInputToggleState(true, InputBox.Text) end) end
+end
+
 local function CreateScriptButton(parent, title, callback, color)
     local Btn = Instance.new("TextButton", parent); Btn.Size = UDim2.new(1, -14, 0, 30); Btn.BackgroundColor3 = color or Color3.fromRGB(35, 35, 35); Btn.TextColor3 = Color3.fromRGB(255, 255, 255); Btn.Text = title; Btn.Font = Enum.Font.GothamBold; Btn.TextSize = 12; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 5)
     local UIPadding = Instance.new("UIPadding", Btn); UIPadding.PaddingLeft = UDim.new(0, 10)
@@ -283,7 +359,7 @@ local TabTele = CreateTab("Teleport", 105)
 local TabSet  = CreateTab("Pengaturan", 140)
 
 Tabs[1].Page.Visible = true; Tabs[1].Btn.TextColor3 = Color3.fromRGB(255, 215, 0)
-local InfoTxt = Instance.new("TextLabel", TabInfo); InfoTxt.Size = UDim2.new(1, 0, 0, 70); InfoTxt.BackgroundTransparency = 1; InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: ALL BUGS FIXED & AUTO FARM READY!"; InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255); InfoTxt.Font = Enum.Font.Gotham; InfoTxt.TextSize = 12; InfoTxt.TextXAlignment = Enum.TextXAlignment.Left
+local InfoTxt = Instance.new("TextLabel", TabInfo); InfoTxt.Size = UDim2.new(1, 0, 0, 70); InfoTxt.BackgroundTransparency = 1; InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: WEBHOOK INTEGRATED & AUTO FARM READY!"; InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255); InfoTxt.Font = Enum.Font.Gotham; InfoTxt.TextSize = 12; InfoTxt.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ==================== SURVIVOR MENU CONFIG ====================
 CreateScriptButton(TabSurv, "🏆 1-Klik Win Survivor (Instan Escape)", function()
@@ -309,6 +385,16 @@ CreateScriptButton(TabSurv, "🏆 1-Klik Win Survivor (Instan Escape)", function
 end, Color3.fromRGB(40, 160, 40))
 
 CreateToggle(TabSurv, "Auto Farm Survivor (Auto Win)")
+CreateStringInputToggle(TabSurv, "Webhook Auto Farm", "URL_DISINI", function(state, value) Config["Webhook Auto Farm Value"] = value end)
+CreateScriptButton(TabSurv, "📡 Test Webhook Status", function()
+    if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
+        SendWebhook(Config["Webhook Auto Farm Value"], true)
+        SendNotification("Webhook", "Mengirim Test ke Discord...", 3)
+    else
+        SendNotification("Error", "Isi URL Webhook & Nyalakan Toggle-nya Dulu!", 3)
+    end
+end, Color3.fromRGB(50, 100, 180))
+
 CreateToggle(TabSurv, "Auto Gen (Fire Instan)") 
 CreateToggle(TabSurv, "Auto Skill Check [LEGIT]")
 CreateToggle(TabSurv, "Auto Gen (Metata)") 
@@ -539,7 +625,6 @@ end)
 local isClicking = false 
 
 local function ExecuteClickUI()
-    -- CEK STRICT ROLE BIAR GA GLITCH DI LOBBY
     local myTeam = LocalPlayer.Team
     local teamName = myTeam and myTeam.Name:lower() or ""
     if teamName:find("lobby") or teamName:find("spectator") or teamName:find("menu") then return end
@@ -787,7 +872,7 @@ task.spawn(function()
 end)
 
 
--- ==================== AUTO FARM SURVIVOR ====================
+-- ==================== AUTO FARM SURVIVOR (DENGAN RETRY 2 DETIK) ====================
 local autoFarmWaitTime = 0
 local autoFarmStatus = "IDLE"
 
@@ -800,18 +885,30 @@ task.spawn(function()
             continue 
         end
         
-        if isHopping then continue end 
-        
         local myTeam = LocalPlayer.Team
         local teamName = myTeam and myTeam.Name:lower() or ""
+
+        if autoFarmStatus == "HOPPING" then
+            -- JIKA GAGAL HOP/MASIH STUCK SETELAH 2 DETIK (RETRY SISTEM)
+            if not isHopping then
+                if tick() - autoFarmWaitTime >= 2 then
+                    autoFarmWaitTime = tick()
+                    FetchAndHop("Small")
+                end
+            end
+            continue
+        end
+        
+        if isHopping then continue end 
         
         if autoFarmStatus == "IDLE" or autoFarmStatus == "WAITING_IN_LOBBY" then
             if teamName:find("killer") or teamName:find("murder") then
                 SendNotification("Auto Farm", "Role Killer terdeteksi! Hop ke server sepi...", 4)
-                FetchAndHop("Small")
                 autoFarmStatus = "HOPPING"
+                autoFarmWaitTime = tick()
+                FetchAndHop("Small")
             elseif teamName:find("survivor") or teamName:find("player") then
-                SendNotification("Auto Farm", "Match mulai (Survivor)! Menunggu 10 detik...", 4)
+                SendNotification("Auto Farm", "Match mulai (Survivor)! Menunggu 23 detik sebelum TP...", 4)
                 autoFarmStatus = "PREPARING_SURVIVOR"
                 autoFarmWaitTime = tick()
             else
@@ -822,13 +919,14 @@ task.spawn(function()
                 elseif autoFarmStatus == "WAITING_IN_LOBBY" then
                     if tick() - autoFarmWaitTime >= 120 then
                         SendNotification("Auto Farm", "2 Menit berlalu tanpa match! Hop server...", 4)
-                        FetchAndHop("Small")
                         autoFarmStatus = "HOPPING"
+                        autoFarmWaitTime = tick()
+                        FetchAndHop("Small")
                     end
                 end
             end
         elseif autoFarmStatus == "PREPARING_SURVIVOR" then
-            if tick() - autoFarmWaitTime >= 10 then
+            if tick() - autoFarmWaitTime >= 23 then
                 local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if hrp and MapObjects.Finishlines and #MapObjects.Finishlines > 0 then
                     local finish = MapObjects.Finishlines[1]
@@ -839,18 +937,25 @@ task.spawn(function()
                     autoFarmWaitTime = tick()
                 else
                     SendNotification("Auto Farm", "Finishline belum siap. Menunggu map render...", 2)
-                    autoFarmWaitTime = tick() - 7 
+                    autoFarmWaitTime = tick() - 18 
                 end
             end
         elseif autoFarmStatus == "WAITING_WIN" then
             if teamName:find("spectator") or teamName:find("lobby") or teamName:find("menu") then
                 SendNotification("Auto Farm", "Match Selesai/Win! Pindah server untuk farm lagi...", 4)
-                FetchAndHop("Small")
+                
+                if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
+                    SendWebhook(Config["Webhook Auto Farm Value"], false)
+                end
+
                 autoFarmStatus = "HOPPING"
+                autoFarmWaitTime = tick()
+                FetchAndHop("Small")
             elseif tick() - autoFarmWaitTime >= 7 then
                 SendNotification("Auto Farm", "Stuck di Finishline (Match nge-bug). Hop server...", 4)
-                FetchAndHop("Small")
                 autoFarmStatus = "HOPPING"
+                autoFarmWaitTime = tick()
+                FetchAndHop("Small")
             end
         end
     end
