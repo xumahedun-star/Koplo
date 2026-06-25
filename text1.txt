@@ -1,3 +1,10 @@
+-- ==================== GLOBAL KILL-SWITCH (ANTI-KEDIP) ====================
+if getgenv().KemantapanBot_Active then
+    getgenv().KemantapanBot_Active = false
+    task.wait(0.5) 
+end
+getgenv().KemantapanBot_Active = true
+
 local CoreGui = game:GetService("CoreGui") or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
@@ -6,75 +13,68 @@ local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
+local isMobile = UserInputService.TouchEnabled
 local lastGeneratorPoint = nil 
 
--- ==================== NOTIFICATION SYSTEM ====================
 local function SendNotification(title, text, duration)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = duration or 3, Icon = "rbxassetid://10873923769" })
-    end)
+    pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = duration or 3, Icon = "rbxassetid://10873923769" }) end)
 end
 
 -- ==================== CONFIG SYSTEM ====================
-local isRunning = true
+local isRunning = function() return getgenv().KemantapanBot_Active end
 local Config = {} 
 local ToggleFunctions = {} 
-local ConfigFileName = "KemantapanHub_ConfigV10_21.json"
+local ConfigFileName = "KemantapanHub_ConfigV30_Final.json"
 
 local function SaveConfig() pcall(function() if writefile then writefile(ConfigFileName, HttpService:JSONEncode(Config)) end end) end
 local function LoadConfig() pcall(function() if isfile and isfile(ConfigFileName) then local decoded = HttpService:JSONDecode(readfile(ConfigFileName)); if decoded then for k, v in pairs(decoded) do Config[k] = v end end end end) end
 local function ResetConfig() pcall(function() if isfile and isfile(ConfigFileName) then delfile(ConfigFileName) end; Config = {} end) end
 LoadConfig()
 
-if Config["Auto Skill Check [LEGIT]"] == nil then Config["Auto Skill Check [LEGIT]"] = true end
+if Config["Auto Skill Check [LEGIT]"] == nil then Config["Auto Skill Check [LEGIT]"] = false end
 if Config["Auto Gen (Fire Instan)"] == nil then Config["Auto Gen (Fire Instan)"] = false end
 if Config["Auto Gen (Metata)"] == nil then Config["Auto Gen (Metata)"] = false end
+if Config["Auto Farm Survivor (Auto Win)"] == nil then Config["Auto Farm Survivor (Auto Win)"] = false end
 
 if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() end
 
--- ==================== METATABLE HOOKS (THE GOD MODE) ====================
+-- ==================== METATABLE HOOKS ====================
 if hookmetamethod then
-    -- 1. NAMECALL HOOK: Manipulasi Paket Data ke Server
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
         local args = {...}
-        
-        if isRunning and method == "FireServer" then
+        if isRunning() and method == "FireServer" then
             local remoteName = tostring(self)
-            
             if remoteName == "SkillCheckResultEvent" then
                 if Config["Auto Gen (Metata)"] or Config["Auto Gen (Fire Instan)"] then
-                    args[1] = "success" 
-                    args[2] = 1         
+                    args[1], args[2] = "success", 1
                     return oldNamecall(self, unpack(args))
                 end
-            elseif remoteName == "RepairEvent" then
-                if args[2] == true and args[1] then
-                    lastGeneratorPoint = args[1]
+            elseif remoteName == "KingScourgeHit" then
+                if Config["Auto Gen (Metata)"] or Config["Auto Gen (Fire Instan)"] then
+                    args[2] = "success" 
+                    return oldNamecall(self, unpack(args))
                 end
+            elseif remoteName == "RepairEvent" and args[2] == true and args[1] then
+                lastGeneratorPoint = args[1]
             end
         end
         return oldNamecall(self, ...)
     end)
 
-    -- 2. INDEX HOOK (NEW!): Manipulasi Mata Klien Game biar Jarum selalu dianggap PERFECT (109°)
     local oldIndex
     oldIndex = hookmetamethod(game, "__index", function(self, key)
-        if not checkcaller() and isRunning and key == "Rotation" then
-            -- Mencegat saat game membaca rotasi jarum (Line)
+        if not checkcaller() and isRunning() and key == "Rotation" then
             if typeof(self) == "Instance" and self.Name == "Line" and self:IsA("GuiObject") then
-                if Config["Auto Gen (Fire Instan)"] or Config["Auto Skill Check [LEGIT]"] then
-                    local parent = self.Parent
-                    local goal = parent and parent:FindFirstChild("Goal")
-                    if goal and goal:IsA("GuiObject") then
-                        -- Memberikan nilai palsu: 109 derajat setelah rotasi Goal (PERFECT HIT)
-                        return goal.Rotation + 109
-                    end
+                if Config["Auto Gen (Fire Instan)"] or Config["Auto Gen (Metata)"] then
+                    local goal = self.Parent and self.Parent:FindFirstChild("Goal")
+                    if goal and goal:IsA("GuiObject") then return goal.Rotation + 109 end
                 end
             end
         end
@@ -83,59 +83,53 @@ if hookmetamethod then
 end
 
 local function getSafePos(obj)
-    if not obj then return Vector3.new(0,0,0) end
+    if not obj or not obj.Parent then return Vector3.new(0,0,0) end
     if obj:IsA("Model") then return obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position end
     if obj:IsA("BasePart") then return obj.Position end
     local bp = obj:FindFirstChildWhichIsA("BasePart", true)
     return bp and bp.Position or Vector3.new(0,0,0)
 end
 
--- ==================== MAP SCANNER (SUPER OPTIMIZED) ====================
-local MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}}
+-- ==================== MAP SCANNER ====================
+local MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Finishlines = {}}
 
 local function RefreshMapObjects()
-    if not isRunning then return end
-    local temp = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}}
+    if not isRunning() then return end
+    local temp = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Finishlines = {}}
     local processed = {}
     
     pcall(function()
         local mapFolder = Workspace:FindFirstChild("Map") or Workspace:FindFirstChild("map")
-        local objectsToScan = mapFolder and mapFolder:GetDescendants() or Workspace:GetDescendants()
+        if not mapFolder then return end 
 
-        for i, obj in ipairs(objectsToScan) do
-            if i % 500 == 0 then task.wait() end 
+        for i, obj in ipairs(mapFolder:GetDescendants()) do
+            if i % 1000 == 0 then task.wait() end 
             if not obj or not obj.Parent or processed[obj] then continue end
             
             local name = obj.Name
             if not name then continue end
             local lname = string.lower(name)
-            local fullName = string.lower(obj:GetFullName())
 
-            if (LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character)) or 
-               fullName:find("lobby") or fullName:find("menu") or fullName:find("spawn") or fullName:find("shop") then 
-                continue 
-            end
-
-            if obj:IsA("Model") and (lname == "window" or lname == "windows") then
+            if lname == "levergoal" and obj:IsA("BasePart") then
+                local gateModel = obj:FindFirstAncestor("Gate") or (obj.Parent and obj.Parent.Parent)
+                if gateModel and not processed[gateModel] then table.insert(temp.Gates, gateModel); processed[gateModel] = true end
+            elseif (lname == "fininshline" or lname == "finishline") and obj:IsA("BasePart") then
+                if not processed[obj] then table.insert(temp.Finishlines, obj); processed[obj] = true end
+            elseif obj:IsA("Model") and (lname == "window" or lname == "windows") then
                 local bottomPart = obj:FindFirstChild("Bottom")
                 local hasVault = obj:FindFirstChild("VaultTrigger") or obj:FindFirstChild("vaulttrigger")
                 if bottomPart and bottomPart:IsA("BasePart") and hasVault and not processed[bottomPart] then
                     table.insert(temp.Windows, bottomPart); processed[bottomPart] = true
                 end
-            elseif lname:find("gate") and not obj:FindFirstChildOfClass("Humanoid") then
-                if obj:FindFirstChild("LeftGate", true) or obj:FindFirstChild("RightGate", true) or obj:FindFirstChild("LeftGate-end", true) then
-                    local targetGate = (obj:IsA("BasePart") and obj.Parent and obj.Parent:IsA("Model") and obj.Parent ~= Workspace) and obj.Parent or obj
-                    if not processed[targetGate] then table.insert(temp.Gates, targetGate); processed[targetGate] = true end
-                end
             elseif (obj:IsA("Model") and lname == "generator") or (obj:IsA("BasePart") and (lname:find("generator") or lname:find("engine") or lname == "gen") and obj.Parent and obj.Parent:IsA("Model") and obj.Parent.Name ~= "Workspace") then
                 local targetGen = obj:IsA("Model") and obj or obj.Parent
                 if targetGen and targetGen:IsA("Model") and not processed[targetGen] then
-                    local isDuplicate = false
+                    local isDup = false
                     local targetPos = getSafePos(targetGen)
                     for _, existingGen in ipairs(temp.Generators) do
-                        if (getSafePos(existingGen) - targetPos).Magnitude < 6 then isDuplicate = true; break end
+                        if (getSafePos(existingGen) - targetPos).Magnitude < 6 then isDup = true; break end
                     end
-                    if not isDuplicate then table.insert(temp.Generators, targetGen); processed[targetGen] = true end
+                    if not isDup then table.insert(temp.Generators, targetGen); processed[targetGen] = true end
                 end
             elseif lname:find("palletwrong") then
                 local targetPallet = (obj:IsA("BasePart") and obj.Parent and obj.Parent:IsA("Model") and obj.Parent ~= Workspace) and obj.Parent or obj
@@ -146,7 +140,7 @@ local function RefreshMapObjects()
     MapObjects = temp
 end
 task.spawn(RefreshMapObjects)
-task.spawn(function() while isRunning do task.wait(5); RefreshMapObjects() end end)
+task.spawn(function() while isRunning() do task.wait(10); RefreshMapObjects() end end)
 
 local function GetGenProgress(gen)
     local highest = 0
@@ -167,12 +161,11 @@ local function GetGenProgress(gen)
     return highest
 end
 
--- ==================== SERVER HOP & UI SETUP ====================
+-- ==================== UI & SERVER HOP SETUP ====================
 local isHopping = false
 local function FetchAndHop(mode)
     if isHopping then return end
     isHopping = true
-    SendNotification("Server Hop", "Sedang mencari server...", 3)
     task.spawn(function()
         local ApiUrl = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?limit=100&sortOrder=" .. (mode == "Small" and "Asc" or "Desc")
         local requestFunc = syn and syn.request or http_request or request
@@ -192,7 +185,7 @@ local function FetchAndHop(mode)
                     if mode == "Small" then table.sort(candidates, function(a, b) return a.playing < b.playing end) else
                         for i = #candidates, 2, -1 do local j = math.random(i); candidates[i], candidates[j] = candidates[j], candidates[i] end
                     end
-                    SendNotification("Sukses", "Teleportasi ke server...", 4)
+                    SendNotification("Hop Server", "Menyambungkan ke Server Baru...", 4)
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[1].id, LocalPlayer)
                 else SendNotification("Gagal", "Tidak nemu server yang cocok saat ini.", 4) end
             end
@@ -221,17 +214,17 @@ local BtnYes = Instance.new("TextButton", ConfirmBox); BtnYes.Size = UDim2.new(0
 local BtnNo = Instance.new("TextButton", ConfirmBox); BtnNo.Size = UDim2.new(0, 80, 0, 30); BtnNo.Position = UDim2.new(0.55, 0, 0.6, 0); BtnNo.BackgroundColor3 = Color3.fromRGB(50, 200, 50); BtnNo.Text = "NO"; BtnNo.TextColor3 = Color3.fromRGB(255, 255, 255); BtnNo.Font = Enum.Font.GothamBold; BtnNo.ZIndex = 12; Instance.new("UICorner", BtnNo).CornerRadius = UDim.new(0, 4)
 
 BtnNo.MouseButton1Click:Connect(function() ConfirmOverlay.Visible = false end)
-BtnYes.MouseButton1Click:Connect(function() ResetConfig(); ConfirmOverlay.Visible = false; isRunning = false; ScreenGui:Destroy() end)
+BtnYes.MouseButton1Click:Connect(function() ResetConfig(); ConfirmOverlay.Visible = false; getgenv().KemantapanBot_Active = false; ScreenGui:Destroy() end)
 
 local TitleBar = Instance.new("Frame", Main); TitleBar.Size = UDim2.new(1, 0, 0, 30); TitleBar.BackgroundColor3 = Color3.fromRGB(255, 215, 0); TitleBar.BorderSizePixel = 0
-local TitleText = Instance.new("TextLabel", TitleBar); TitleText.Size = UDim2.new(1, -40, 1, 0); TitleText.Position = UDim2.new(0, 10, 0, 0); TitleText.BackgroundTransparency = 1; TitleText.Text = "Kemantapan Hub | V10 (The God Mode __Index Bypass)"; TitleText.TextColor3 = Color3.fromRGB(15, 15, 15); TitleText.Font = Enum.Font.GothamBold; TitleText.TextSize = 13; TitleText.TextXAlignment = Enum.TextXAlignment.Left
+local TitleText = Instance.new("TextLabel", TitleBar); TitleText.Size = UDim2.new(1, -40, 1, 0); TitleText.Position = UDim2.new(0, 10, 0, 0); TitleText.BackgroundTransparency = 1; TitleText.Text = "Kemantapan Hub | V30 (Auto Farm & Anti-Glitch Lobby)"; TitleText.TextColor3 = Color3.fromRGB(15, 15, 15); TitleText.Font = Enum.Font.GothamBold; TitleText.TextSize = 12; TitleText.TextXAlignment = Enum.TextXAlignment.Left
 local CloseBtn = Instance.new("TextButton", TitleBar); CloseBtn.Size = UDim2.new(0, 30, 1, 0); CloseBtn.Position = UDim2.new(1, -30, 0, 0); CloseBtn.BackgroundTransparency = 1; CloseBtn.Text = "X"; CloseBtn.TextColor3 = Color3.fromRGB(255, 50, 50); CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 16
 
 local Sidebar = Instance.new("Frame", Main); Sidebar.Size = UDim2.new(0, 120, 1, -30); Sidebar.Position = UDim2.new(0, 0, 0, 30); Sidebar.BackgroundColor3 = Color3.fromRGB(20, 20, 20); Sidebar.BorderSizePixel = 0
 local ContentArea = Instance.new("Frame", Main); ContentArea.Size = UDim2.new(1, -120, 1, -30); ContentArea.Position = UDim2.new(0, 120, 0, 30); ContentArea.BackgroundTransparency = 1
 
 ToggleR.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
-CloseBtn.MouseButton1Click:Connect(function() isRunning = false; ScreenGui:Destroy() end)
+CloseBtn.MouseButton1Click:Connect(function() getgenv().KemantapanBot_Active = false; ScreenGui:Destroy() end)
 
 local Tabs = {}
 local function CreateTab(name, yPos)
@@ -241,11 +234,7 @@ local function CreateTab(name, yPos)
     Page.Size = UDim2.new(1, 0, 1, 0); Page.BackgroundTransparency = 1; Page.ScrollBarThickness = 4; Page.Visible = false; Page.CanvasSize = UDim2.new(0, 0, 0, 0); Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
     local Layout = Instance.new("UIListLayout", Page); Layout.SortOrder = Enum.SortOrder.LayoutOrder; Layout.Padding = UDim.new(0, 5)
     table.insert(Tabs, {Btn = Btn, Page = Page, Layout = Layout})
-    
-    Btn.MouseButton1Click:Connect(function() 
-        for _, t in pairs(Tabs) do t.Btn.TextColor3 = Color3.fromRGB(180, 180, 180); t.Page.Visible = false end
-        Btn.TextColor3 = Color3.fromRGB(255, 215, 0); Page.Visible = true 
-    end)
+    Btn.MouseButton1Click:Connect(function() for _, t in pairs(Tabs) do t.Btn.TextColor3 = Color3.fromRGB(180, 180, 180); t.Page.Visible = false end; Btn.TextColor3 = Color3.fromRGB(255, 215, 0); Page.Visible = true end)
     return Page
 end
 
@@ -253,15 +242,11 @@ local function CreateToggle(parent, title, callback)
     local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -10, 0, 30); Container.BackgroundTransparency = 1
     local Lbl = Instance.new("TextLabel", Container); Lbl.Size = UDim2.new(0.65, 0, 1, 0); Lbl.BackgroundTransparency = 1; Lbl.Text = "  " .. title; Lbl.TextColor3 = Color3.fromRGB(220, 220, 220); Lbl.Font = Enum.Font.Gotham; Lbl.TextSize = 11; Lbl.TextXAlignment = Enum.TextXAlignment.Left
     local Btn = Instance.new("TextButton", Container); Btn.Size = UDim2.new(0, 70, 0, 22); Btn.Position = UDim2.new(1, -80, 0.5, -11); Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35); Btn.Text = "OFF"; Btn.TextColor3 = Color3.fromRGB(255, 100, 100); Btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
-    
     if Config[title] == nil then Config[title] = false end
     local function setToggleState(state, skipCallback)
-        Config[title] = state; Btn.Text = state and "ON" or "OFF"
-        Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35)
-        Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
+        Config[title] = state; Btn.Text = state and "ON" or "OFF"; Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35); Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
         if callback and not skipCallback then pcall(function() callback(state) end) end
     end
-    
     ToggleFunctions[title] = setToggleState
     Btn.MouseButton1Click:Connect(function() setToggleState(not Config[title]) end)
     if Config[title] == true then task.spawn(function() setToggleState(true) end) end
@@ -272,15 +257,11 @@ local function CreateInputToggle(parent, title, defaultInput, callback)
     local Lbl = Instance.new("TextLabel", Container); Lbl.Size = UDim2.new(0.4, 0, 1, 0); Lbl.BackgroundTransparency = 1; Lbl.Text = "  " .. title; Lbl.TextColor3 = Color3.fromRGB(220, 220, 220); Lbl.Font = Enum.Font.Gotham; Lbl.TextSize = 11; Lbl.TextXAlignment = Enum.TextXAlignment.Left
     local InputBox = Instance.new("TextBox", Container); InputBox.Size = UDim2.new(0, 40, 0, 22); InputBox.Position = UDim2.new(0.45, 0, 0.5, -11); InputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30); InputBox.TextColor3 = Color3.fromRGB(255, 255, 255); InputBox.Text = tostring(Config[title .. " Value"] or defaultInput); InputBox.Font = Enum.Font.Gotham; InputBox.TextSize = 11; Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 4)
     local Btn = Instance.new("TextButton", Container); Btn.Size = UDim2.new(0, 70, 0, 22); Btn.Position = UDim2.new(1, -80, 0.5, -11); Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35); Btn.Text = "OFF"; Btn.TextColor3 = Color3.fromRGB(255, 100, 100); Btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
-    
     if Config[title] == nil then Config[title] = false end
     local function setInputToggleState(state, val)
-        Config[title] = state; Config[title .. " Value"] = val; Btn.Text = state and "ON" or "OFF"
-        Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35)
-        Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
+        Config[title] = state; Config[title .. " Value"] = val; Btn.Text = state and "ON" or "OFF"; Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35); Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
         if callback then pcall(function() callback(state, val) end) end
     end
-    
     Btn.MouseButton1Click:Connect(function() setInputToggleState(not Config[title], tonumber(InputBox.Text) or defaultInput) end)
     InputBox:GetPropertyChangedSignal("Text"):Connect(function()
         local val = tonumber(InputBox.Text)
@@ -302,9 +283,32 @@ local TabTele = CreateTab("Teleport", 105)
 local TabSet  = CreateTab("Pengaturan", 140)
 
 Tabs[1].Page.Visible = true; Tabs[1].Btn.TextColor3 = Color3.fromRGB(255, 215, 0)
-local InfoTxt = Instance.new("TextLabel", TabInfo); InfoTxt.Size = UDim2.new(1, 0, 0, 70); InfoTxt.BackgroundTransparency = 1; InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: __Index Perfect Spoof Active!"; InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255); InfoTxt.Font = Enum.Font.Gotham; InfoTxt.TextSize = 12; InfoTxt.TextXAlignment = Enum.TextXAlignment.Left
+local InfoTxt = Instance.new("TextLabel", TabInfo); InfoTxt.Size = UDim2.new(1, 0, 0, 70); InfoTxt.BackgroundTransparency = 1; InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: ALL BUGS FIXED & AUTO FARM READY!"; InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255); InfoTxt.Font = Enum.Font.Gotham; InfoTxt.TextSize = 12; InfoTxt.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ==================== SURVIVOR MENU CONFIG ====================
+CreateScriptButton(TabSurv, "🏆 1-Klik Win Survivor (Instan Escape)", function()
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    if MapObjects.Finishlines and #MapObjects.Finishlines > 0 then
+        hrp.CFrame = CFrame.new(MapObjects.Finishlines[1].Position + Vector3.new(0, 1, 0))
+        hrp.Velocity = Vector3.new(0,0,0)
+        SendNotification("WIN!", "Teleportasi ke Finish Line berhasil!", 3)
+    else
+        local map = Workspace:FindFirstChild("Map") or Workspace:FindFirstChild("map")
+        local found = false
+        if map then
+            for _, v in ipairs(map:GetDescendants()) do
+                if v:IsA("BasePart") and (v.Name:lower() == "fininshline" or v.Name:lower() == "finishline") then
+                    hrp.CFrame = CFrame.new(v.Position + Vector3.new(0, 1, 0)); hrp.Velocity = Vector3.new(0,0,0)
+                    SendNotification("WIN!", "Teleportasi ke Finish Line berhasil!", 3); found = true; break
+                end
+            end
+        end
+        if not found then SendNotification("Error", "Finish Line belum di-render/ditemukan di map.", 3) end
+    end
+end, Color3.fromRGB(40, 160, 40))
+
+CreateToggle(TabSurv, "Auto Farm Survivor (Auto Win)")
 CreateToggle(TabSurv, "Auto Gen (Fire Instan)") 
 CreateToggle(TabSurv, "Auto Skill Check [LEGIT]")
 CreateToggle(TabSurv, "Auto Gen (Metata)") 
@@ -312,19 +316,16 @@ CreateToggle(TabSurv, "Anti-Stuck (Auto Cancel on Move)")
 CreateToggle(TabSurv, "Noclip (Tembus Tembok)")
 CreateInputToggle(TabSurv, "WalkSpeed", 20, function(state, value) Config["WalkSpeed Value"] = value end)
 
+-- ==================== ESP MENU CONFIG ====================
+CreateToggle(TabESP, "Set Waktu Siang (12 PM)", function(state) if state then Lighting.ClockTime = 12 end end)
+Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function() if Config["Set Waktu Siang (12 PM)"] and Lighting.ClockTime ~= 12 then Lighting.ClockTime = 12 end end)
+
 CreateToggle(TabESP, "World Visual (No Fog/Shadow)", function(state)
     Lighting.GlobalShadows = not state
-    for _, v in ipairs(Lighting:GetDescendants()) do 
-        if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("Sky") then v.Enabled = not state end 
-    end
+    for _, v in ipairs(Lighting:GetDescendants()) do if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("Sky") then v.Enabled = not state end end
 end)
 CreateInputToggle(TabESP, "Custom Brightness", 3, function(state, value) Lighting.Brightness = state and value or 1 end)
-Lighting:GetPropertyChangedSignal("Brightness"):Connect(function() 
-    if Config["Custom Brightness"] then 
-        local val = tonumber(Config["Custom Brightness Value"]) or 3
-        if Lighting.Brightness ~= val then Lighting.Brightness = val end 
-    end 
-end)
+Lighting:GetPropertyChangedSignal("Brightness"):Connect(function() if Config["Custom Brightness"] then local val = tonumber(Config["Custom Brightness Value"]) or 3; if Lighting.Brightness ~= val then Lighting.Brightness = val end end end)
 
 CreateToggle(TabESP, "ESP All-in-One", function(state)
     local espList = {"ESP Survivor", "ESP Killer", "ESP Generator", "ESP Pallet", "ESP Window", "ESP Gate", "Tampilkan Nama Player & Jarak"}
@@ -354,7 +355,7 @@ local BtnTPExec = Instance.new("TextButton", ActionFrame); BtnTPExec.Size = UDim
 local BtnRefreshMap = Instance.new("TextButton", ActionFrame)
 BtnRefreshMap.Size = UDim2.new(1, 0, 0, 26); BtnRefreshMap.Position = UDim2.new(0, 0, 0, 52); BtnRefreshMap.BackgroundColor3 = Color3.fromRGB(200, 150, 40); BtnRefreshMap.Text = "🔄 REFRESH MAP LOG"; BtnRefreshMap.TextColor3 = Color3.fromRGB(255, 255, 255); BtnRefreshMap.Font = Enum.Font.GothamBold; BtnRefreshMap.TextSize = 12; Instance.new("UICorner", BtnRefreshMap).CornerRadius = UDim.new(0, 4)
 
-BtnRefreshMap.MouseButton1Click:Connect(function() MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}}; SendNotification("Refresh Map", "Membersihkan log lama dan scan ulang...", 3); RefreshMapObjects() end)
+BtnRefreshMap.MouseButton1Click:Connect(function() MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Finishlines = {}}; SendNotification("Refresh Map", "Membersihkan log lama dan scan ulang...", 3); RefreshMapObjects() end)
 
 local function RefreshPlayerList()
     for _, v in ipairs(PlayerScroll:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
@@ -366,14 +367,9 @@ local function RefreshPlayerList()
     end
 end
 BtnTPExec.MouseButton1Click:Connect(function() 
-    if selectedPlayerToTP and selectedPlayerToTP.Character then 
-        LocalPlayer.Character.HumanoidRootPart.CFrame = selectedPlayerToTP.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3) 
-    end 
+    if selectedPlayerToTP and selectedPlayerToTP.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = selectedPlayerToTP.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3) end 
 end)
-
-RefreshPlayerList()
-Players.PlayerAdded:Connect(RefreshPlayerList)
-Players.PlayerRemoving:Connect(RefreshPlayerList)
+RefreshPlayerList(); Players.PlayerAdded:Connect(RefreshPlayerList); Players.PlayerRemoving:Connect(RefreshPlayerList)
 
 local BoxRight = Instance.new("Frame", TeleContainer); BoxRight.Size = UDim2.new(0.48, 0, 0.95, 0); BoxRight.Position = UDim2.new(0.51, 0, 0, 5); BoxRight.BackgroundColor3 = Color3.fromRGB(25, 25, 25); Instance.new("UICorner", BoxRight).CornerRadius = UDim.new(0, 6)
 local LblRight = Instance.new("TextLabel", BoxRight); LblRight.Size = UDim2.new(1, 0, 0, 20); LblRight.BackgroundTransparency = 1; LblRight.Text = "Teleport Map"; LblRight.TextColor3 = Color3.fromRGB(255, 215, 0); LblRight.Font = Enum.Font.GothamBold; LblRight.TextSize = 12
@@ -389,28 +385,21 @@ for i = 1, 7 do AddMapBtn("TP Generator " .. i, function()
     local gens = {}
     if MapObjects.Generators then for _, v in ipairs(MapObjects.Generators) do table.insert(gens, v) end end
     if #gens == 0 then SendNotification("Kosong", "Generator belum terdeteksi", 3) return end
-    
     table.sort(gens, function(a, b) 
         local posA, posB = getSafePos(a), getSafePos(b)
         if math.abs(posA.X - posB.X) < 2 then return posA.Z < posB.Z end
         return posA.X < posB.X 
     end)
-    
     local targetGen = gens[i]
     if not targetGen then SendNotification("Info", "Generator ke-" .. i .. " belum terdeteksi.", 3) return end
     
     local pointCFrame = nil
     for _, v in ipairs(targetGen:GetDescendants()) do 
-        if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") then 
-            pointCFrame = v.CFrame; if v.Name:lower() == "generatorpoint1" then break end 
-        end 
+        if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") then pointCFrame = v.CFrame; if v.Name:lower() == "generatorpoint1" then break end end 
     end
-    
     if not pointCFrame and targetGen.Parent and targetGen.Parent ~= Workspace then 
         for _, v in ipairs(targetGen.Parent:GetDescendants()) do 
-            if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") and (v.Position - getSafePos(targetGen)).Magnitude < 7 then 
-                pointCFrame = v.CFrame; if v.Name:lower() == "generatorpoint1" then break end 
-            end 
+            if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") and (v.Position - getSafePos(targetGen)).Magnitude < 7 then pointCFrame = v.CFrame; if v.Name:lower() == "generatorpoint1" then break end end 
         end 
     end
     
@@ -427,9 +416,10 @@ end) end
 for i = 1, 2 do AddMapBtn("TP Gate " .. i, function() 
     local gate = MapObjects.Gates[i]
     if not gate then return end
-    local tpPart = gate:IsA("BasePart") and gate or gate.PrimaryPart or gate:FindFirstChildWhichIsA("BasePart", true)
+    local leverGoal = gate:FindFirstChild("LeverGoal", true) or gate:FindFirstChild("levergoal", true)
+    local tpPart = leverGoal or gate.PrimaryPart or gate:FindFirstChildWhichIsA("BasePart", true)
     if tpPart and LocalPlayer.Character then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(tpPart.Position + Vector3.new(0, 4, 0)) 
+        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(tpPart.Position + Vector3.new(0, 3, 0)); LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
     end
 end) end
 
@@ -442,9 +432,9 @@ CreateScriptButton(TabSet, "📉 Find Small Server (Sepi)", function() FetchAndH
 
 -- ==================== ENGINE ESP Core ====================
 local function DrawESP(obj, color, isEnabled, isPlayer, isGenerator, textNamePlayer, isWindow)
-    if not obj or not obj.Parent then return end
+    if not obj or not obj.Parent then return end 
     local targetPart = obj:IsA("BasePart") and obj or obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart", true)
-    if not targetPart then targetPart = obj end
+    if not targetPart or not targetPart.Parent then return end 
     if isWindow then targetPart = obj end
 
     local useBoxESP = isWindow
@@ -454,23 +444,18 @@ local function DrawESP(obj, color, isEnabled, isPlayer, isGenerator, textNamePla
     if isEnabled then
         if not espVisual then 
             if useBoxESP then
-                espVisual = Instance.new("BoxHandleAdornment")
-                espVisual.Name = "KM_ESP_BOX"; espVisual.Parent = targetPart; espVisual.Adornee = targetPart; espVisual.AlwaysOnTop = true; espVisual.ZIndex = 10; espVisual.Size = targetPart.Size + Vector3.new(0.05, 0.05, 0.05); espVisual.Transparency = 0.5
+                espVisual = Instance.new("BoxHandleAdornment"); espVisual.Name = "KM_ESP_BOX"; espVisual.Parent = targetPart; espVisual.Adornee = targetPart; espVisual.AlwaysOnTop = true; espVisual.ZIndex = 10; espVisual.Size = targetPart.Size + Vector3.new(0.05, 0.05, 0.05); espVisual.Transparency = 0.5
             else
-                espVisual = Instance.new("Highlight")
-                espVisual.Name = "KM_ESP"; espVisual.FillTransparency = 0.5; espVisual.Parent = obj:IsA("Model") and obj or targetPart; espVisual.Adornee = obj:IsA("Model") and obj or targetPart
+                espVisual = Instance.new("Highlight"); espVisual.Name = "KM_ESP"; espVisual.FillTransparency = 0.5; espVisual.Parent = obj:IsA("Model") and obj or targetPart; espVisual.Adornee = obj:IsA("Model") and obj or targetPart
             end
         end
-        
         if useBoxESP then espVisual.Color3 = color; espVisual.Visible = true else espVisual.FillColor = color; espVisual.OutlineColor = color; espVisual.Enabled = true end
 
         local showText = false; local finalText = ""
         if isPlayer and Config["Tampilkan Nama Player & Jarak"] then
             finalText = textNamePlayer
             local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if root then 
-                finalText = finalText .. " [" .. math.floor((root.Position - targetPart.Position).Magnitude) .. "m]" 
-            end
+            if root then finalText = finalText .. " [" .. math.floor((root.Position - targetPart.Position).Magnitude) .. "m]" end
             showText = true 
         elseif isGenerator then
             finalText = GetGenProgress(obj) .. "%"; showText = true
@@ -494,7 +479,7 @@ end
 -- ==================== NOCLIP & MOVEMENT ====================
 local wasNoclipEnabled = false
 RunService.Stepped:Connect(function()
-    if not isRunning then return end
+    if not isRunning() then return end
     local char = LocalPlayer.Character
     if not char then return end
 
@@ -519,18 +504,16 @@ end)
 
 local wasWalkSpeedEnabled = false
 RunService.Heartbeat:Connect(function()
-    if not isRunning then return end
+    if not isRunning() then return end
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
 
     if hum then
         if Config["WalkSpeed"] then 
-            hum.WalkSpeed = Config["WalkSpeed Value"] or 20
-            wasWalkSpeedEnabled = true
+            hum.WalkSpeed = Config["WalkSpeed Value"] or 20; wasWalkSpeedEnabled = true
         elseif wasWalkSpeedEnabled then 
-            hum.WalkSpeed = 16
-            wasWalkSpeedEnabled = false 
+            hum.WalkSpeed = 16; wasWalkSpeedEnabled = false 
         end
 
         if Config["Anti-Stuck (Auto Cancel on Move)"] and hum.MoveDirection.Magnitude > 0 then
@@ -539,84 +522,98 @@ RunService.Heartbeat:Connect(function()
                 if remotes then
                     local genRemote = remotes:FindFirstChild("Generator") and remotes.Generator:FindFirstChild("RepairEvent")
                     local emoteRemote = remotes:FindFirstChild("EmoteHandler")
-                    if genRemote then genRemote:FireServer(lastGeneratorPoint, false) end
-                    if emoteRemote then emoteRemote:FireServer("StopEmote") end
+                    if genRemote then pcall(function() genRemote:FireServer(lastGeneratorPoint, false) end) end
+                    if emoteRemote then pcall(function() emoteRemote:FireServer("StopEmote") end) end
                 end
                 lastGeneratorPoint = nil 
             end
-
             if hrp and hrp.Anchored then hrp.Anchored = false end
             if hum.PlatformStand then hum.PlatformStand = false end
             if hum.Sit then hum.Sit = false end
-            if hum.WalkSpeed == 0 then
-                hum.WalkSpeed = Config["WalkSpeed"] and (Config["WalkSpeed Value"] or 20) or 16
-            end
+            if hum.WalkSpeed == 0 then hum.WalkSpeed = Config["WalkSpeed"] and (Config["WalkSpeed Value"] or 20) or 16 end
         end
     end
 end)
 
--- ==================== THE GOD MODE QTE EXECUTION ====================
-local processedQTEs = {}
+-- ==================== THE GOD MODE QTE LOOP (ANTI-GLITCH LOBBY) ====================
 local isClicking = false 
 
 local function ExecuteClickUI()
+    -- CEK STRICT ROLE BIAR GA GLITCH DI LOBBY
+    local myTeam = LocalPlayer.Team
+    local teamName = myTeam and myTeam.Name:lower() or ""
+    if teamName:find("lobby") or teamName:find("spectator") or teamName:find("menu") then return end
+
     pcall(function()
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        local actionBtn = playerGui and playerGui:FindFirstChild("Survivor-mob") and playerGui["Survivor-mob"]:FindFirstChild("Controls") and playerGui["Survivor-mob"].Controls:FindFirstChild("action")
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        local actionBtn = pg and pg:FindFirstChild("Survivor-mob") and pg["Survivor-mob"]:FindFirstChild("Controls") and pg["Survivor-mob"].Controls:FindFirstChild("action")
         
         if actionBtn then
-            -- Jalur 1: Memaksa eksekusi fungsi klik beneran
             if firesignal then
-                pcall(function() firesignal(actionBtn.MouseButton1Down) end)
-                pcall(function() firesignal(actionBtn.MouseButton1Click) end)
+                pcall(function() firesignal(actionBtn.MouseButton1Down); firesignal(actionBtn.MouseButton1Click); firesignal(actionBtn.Activated) end)
             end
-            
-            -- Jalur 2: Virtual Touch Tap di Layar HP
-            local cx = actionBtn.AbsolutePosition.X + (actionBtn.AbsoluteSize.X / 2)
-            local cy = actionBtn.AbsolutePosition.Y + (actionBtn.AbsoluteSize.Y / 2)
-            VirtualInputManager:SendTouchTapEvent(cx, cy, true, game)
-            VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 1)
-            task.wait(0.01)
-            VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
+        else
+            if not isMobile then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                task.wait(0.01)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+            end
         end
     end)
-    
-    -- Jalur 3: Virtual PC (Spasi)
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-    task.wait(0.01)
-    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
 end
 
 local function HandleQTEProcess(ui, isLegitMode)
     if isClicking then return end
     isClicking = true
-    
     task.spawn(function()
-        -- Kita tidak perlu peduli lagi sama posisi visual jarum di layar lu!
-        -- Karena __index hook di atas udah memaksa game ngebaca jarumnya selalu di titik Perfect.
-        
-        if isLegitMode then
-            task.wait(math.random(50, 90) / 100) -- Tunggu bentar pura-pura manusia
-        else
-            task.wait(0.1) -- Fire Instan (Tunggu 0.1s biar UI sempat ngerender)
+        local rootUI = (ui.Parent and ui.Parent:IsA("GuiObject") and (ui.Parent.Name:lower():find("skill") or ui.Parent.Name:lower():find("qte"))) and ui.Parent or ui
+        local pointer, targetArea = nil, nil
+        for _, v in ipairs(rootUI:GetDescendants()) do
+            if v:IsA("GuiObject") and v.Visible then
+                local vName = v.Name:lower()
+                if vName == "goal" or vName:find("perfect") then targetArea = v end
+                if vName == "line" or vName:find("pointer") or vName:find("jarum") then pointer = v end
+            end
         end
-        
-        if ui.Visible and isRunning then 
-            ExecuteClickUI() -- BAM! Langsung tembak. LocalScript game bakal nganggep ini Perfect (Great)!
-        end
-        
-        task.wait(0.35) 
-        isClicking = false
-    end)
-end
 
-local function HandleQTEMetata(ui)
-    if isClicking then return end
-    isClicking = true
-    task.spawn(function()
-        task.wait(0.1)
-        if ui.Visible and isRunning then ExecuteClickUI() end
-        task.wait(0.5)
+        if not isLegitMode then
+            task.wait(0.1) 
+            ExecuteClickUI()
+            task.wait(0.35)
+        else
+            if pointer and targetArea then
+                local clicked = false
+                local renderConn
+                local lastRot = pointer.Rotation
+                
+                renderConn = RunService.RenderStepped:Connect(function()
+                    local tName = LocalPlayer.Team and LocalPlayer.Team.Name:lower() or ""
+                    if tName:find("lobby") or tName:find("spectator") or not (ui.Visible and isRunning()) or clicked then
+                        if renderConn then renderConn:Disconnect() end
+                        return
+                    end
+                    
+                    local currentRot = pointer.Rotation
+                    local goalRot = targetArea.Rotation
+                    local perfectStart = 102 + goalRot
+                    local perfectEnd = 116 + goalRot
+                    
+                    if (currentRot >= perfectStart + 1 and currentRot <= perfectEnd) or (lastRot < perfectStart and currentRot >= perfectStart) then
+                        clicked = true
+                        ExecuteClickUI()
+                        if renderConn then renderConn:Disconnect() end
+                    end
+                    lastRot = currentRot
+                end)
+                
+                task.delay(3, function() if renderConn then renderConn:Disconnect() end; clicked = true end)
+                while not clicked and ui.Visible and isRunning() do task.wait(0.05) end
+            else
+                task.wait(math.random(60, 90) / 100)
+                ExecuteClickUI()
+            end
+            task.wait(0.35)
+        end
         isClicking = false
     end)
 end
@@ -624,18 +621,14 @@ end
 local function MonitorUI(ui)
     if not ui:IsA("GuiObject") then return end
     local uiName = ui.Name:lower()
-    
     if uiName:find("skill") or uiName:find("check") or uiName:find("qte") or uiName:find("circle") or uiName:find("hitpoint") then
-        if processedQTEs[ui] then return end
-        processedQTEs[ui] = true
-        
         local function triggerLogic()
-            if not (ui.Visible and isRunning) then return end
-            if Config["Auto Gen (Metata)"] then HandleQTEMetata(ui)
-            elseif Config["Auto Gen (Fire Instan)"] then HandleQTEProcess(ui, false) 
+            local tName = LocalPlayer.Team and LocalPlayer.Team.Name:lower() or ""
+            if tName:find("lobby") or tName:find("spectator") or not (ui.Visible and isRunning()) then return end
+            
+            if Config["Auto Gen (Metata)"] or Config["Auto Gen (Fire Instan)"] then HandleQTEProcess(ui, false) 
             elseif Config["Auto Skill Check [LEGIT]"] then HandleQTEProcess(ui, true) end
         end
-
         triggerLogic()
         ui:GetPropertyChangedSignal("Visible"):Connect(triggerLogic)
     end
@@ -645,12 +638,231 @@ local playerGui = LocalPlayer:WaitForChild("PlayerGui")
 for _, child in ipairs(playerGui:GetDescendants()) do MonitorUI(child) end
 playerGui.DescendantAdded:Connect(MonitorUI)
 
--- ==================== MAIN AUTOMATION LOOP ====================
+
+-- ==================== METATA FULL BOT AUTONOMY ====================
+local interactDelay = 0
+local lastMetataGen = nil
+local matchEnded = false 
+
+LocalPlayer.CharacterAdded:Connect(function() matchEnded = false end)
+
+local function TriggerInteractButton()
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        local actionBtn = pg and pg:FindFirstChild("Survivor-mob") and pg["Survivor-mob"]:FindFirstChild("Controls") and pg["Survivor-mob"].Controls:FindFirstChild("action")
+        if actionBtn then
+            if firesignal then pcall(function() firesignal(actionBtn.MouseButton1Down); firesignal(actionBtn.MouseButton1Click); firesignal(actionBtn.Activated); firesignal(actionBtn.TouchTap) end) end
+            local cx = actionBtn.AbsolutePosition.X + (actionBtn.AbsoluteSize.X / 2)
+            local cy = actionBtn.AbsolutePosition.Y + (actionBtn.AbsoluteSize.Y / 2)
+            VirtualInputManager:SendTouchTapEvent(cx, cy, true, game); task.wait(0.05); VirtualInputManager:SendTouchTapEvent(cx, cy, false, game)
+        end
+        for _, prompt in ipairs(Workspace:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") and prompt.ActionText:lower():find("repair") then
+                if (getSafePos(prompt.Parent) - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude < 10 then
+                    if fireproximityprompt then fireproximityprompt(prompt, 1, true) end
+                end
+            end
+        end
+    end)
+end
+
+local function TeleportToGen(gen, hrp)
+    local points = {}
+    for _, v in ipairs(gen:GetDescendants()) do if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") then table.insert(points, v) end end
+    if #points == 0 and gen.Parent and gen.Parent ~= Workspace then 
+        for _, v in ipairs(gen.Parent:GetDescendants()) do if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") and (v.Position - getSafePos(gen)).Magnitude < 10 then table.insert(points, v) end end 
+    end
+    
+    local bestPt = nil
+    for _, pt in ipairs(points) do
+        local occupied = false
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                if (p.Character.HumanoidRootPart.Position - pt.Position).Magnitude < 2.5 then occupied = true; break end
+            end
+        end
+        if not occupied then bestPt = pt; break end
+    end
+    if bestPt then hrp.CFrame = bestPt.CFrame; hrp.Velocity = Vector3.new(0,0,0); return true end
+    return false 
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if not isRunning() or not Config["Auto Gen (Metata)"] then continue end
+        local mapFolder = Workspace:FindFirstChild("Map") or Workspace:FindFirstChild("map")
+        if not mapFolder then matchEnded = false; continue end
+
+        local teamName = LocalPlayer.Team and LocalPlayer.Team.Name:lower() or ""
+        if teamName:find("spectator") or teamName:find("lobby") or teamName:find("menu") then matchEnded = false; continue end
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum or matchEnded then continue end
+
+        local checkInterractable = char:FindFirstChild("CheckInterractable")
+        local isRepairing = checkInterractable and checkInterractable:GetAttribute("isRepairing") == true
+        if isRepairing and lastMetataGen and GetGenProgress(lastMetataGen) >= 100 then isRepairing = false end
+
+        local isKnocked = false
+        if (hum.Health > 0 and hum.Health <= 15) or hum.PlatformStand or hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown or char:GetAttribute("Knocked") == true or char:GetAttribute("Downed") == true then isKnocked = true end
+
+        local isKillerNear = false
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local isKiller = p.Team and (p.Team.Name:lower():find("killer") or p.Team.Name:lower():find("murder"))
+                if isKiller and (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude < 65 then isKillerNear = true break end
+            end
+        end
+
+        local completedGens = 0
+        local incompleteGens = {}
+        if MapObjects.Generators then
+            for _, gen in ipairs(MapObjects.Generators) do
+                if gen and gen.Parent then if GetGenProgress(gen) >= 100 then completedGens = completedGens + 1 else table.insert(incompleteGens, gen) end end
+            end
+        end
+
+        if completedGens >= 5 or #incompleteGens == 0 or isKnocked then
+            if MapObjects.Finishlines and #MapObjects.Finishlines > 0 then
+                local finish = MapObjects.Finishlines[1]
+                if finish and (hrp.Position - finish.Position).Magnitude > 5 then
+                    hrp.CFrame = CFrame.new(finish.Position + Vector3.new(0, 1, 0)); hrp.Velocity = Vector3.new(0,0,0)
+                    matchEnded = true; SendNotification("Bot Info", "Win/Knocked terdeteksi. Menunggu di Finishline...", 3)
+                end
+            end
+            continue 
+        end
+
+        if isKillerNear then
+            if isRepairing or lastGeneratorPoint then
+                local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                if remotes then
+                    if remotes:FindFirstChild("Generator") and remotes.Generator:FindFirstChild("RepairEvent") and lastGeneratorPoint then pcall(function() remotes.Generator.RepairEvent:FireServer(lastGeneratorPoint, false) end) end
+                    if remotes:FindFirstChild("EmoteHandler") then pcall(function() remotes.EmoteHandler:FireServer("StopEmote") end) end
+                end
+                lastGeneratorPoint = nil; if hrp.Anchored then hrp.Anchored = false end
+            end
+            local safestGen, maxDist = nil, -1
+            for _, gen in ipairs(incompleteGens) do
+                local distToKiller = 9999
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        local isKiller = p.Team and (p.Team.Name:lower():find("killer") or p.Team.Name:lower():find("murder"))
+                        if isKiller then
+                            local kDist = (p.Character.HumanoidRootPart.Position - getSafePos(gen)).Magnitude
+                            if kDist < distToKiller then distToKiller = kDist end
+                        end
+                    end
+                end
+                if distToKiller > maxDist then maxDist = distToKiller; safestGen = gen end
+            end
+            if safestGen and maxDist > 65 then
+                if not TeleportToGen(safestGen, hrp) then
+                    local backupPt = safestGen:IsA("BasePart") and safestGen or safestGen:FindFirstChildWhichIsA("BasePart", true)
+                    if backupPt then hrp.CFrame = CFrame.new(backupPt.Position + Vector3.new(0,2,0)); hrp.Velocity = Vector3.new(0,0,0) end
+                end
+                lastMetataGen = safestGen; interactDelay = tick() + 1.2 
+            end
+            continue 
+        end
+
+        if not isRepairing and tick() > interactDelay then
+            if lastMetataGen and GetGenProgress(lastMetataGen) < 100 then
+                if (hrp.Position - getSafePos(lastMetataGen)).Magnitude < 10 then TriggerInteractButton(); interactDelay = tick() + 2; continue end
+            end
+            table.sort(incompleteGens, function(a, b) return (getSafePos(a) - hrp.Position).Magnitude < (getSafePos(b) - hrp.Position).Magnitude end)
+            local foundGen = false
+            for _, gen in ipairs(incompleteGens) do
+                if TeleportToGen(gen, hrp) then lastMetataGen = gen; interactDelay = tick() + 1.2; foundGen = true; break end
+            end
+            if not foundGen and #incompleteGens > 0 then
+                local backupPt = incompleteGens[1]:IsA("BasePart") and incompleteGens[1] or incompleteGens[1]:FindFirstChildWhichIsA("BasePart", true)
+                if backupPt then hrp.CFrame = CFrame.new(backupPt.Position + Vector3.new(0,2,0)); hrp.Velocity = Vector3.new(0,0,0) end
+                lastMetataGen = incompleteGens[1]; interactDelay = tick() + 1.2
+            end
+        end
+    end
+end)
+
+
+-- ==================== AUTO FARM SURVIVOR ====================
+local autoFarmWaitTime = 0
+local autoFarmStatus = "IDLE"
+
+task.spawn(function()
+    while task.wait(1) do
+        if not isRunning() then break end
+        if not Config["Auto Farm Survivor (Auto Win)"] then 
+            autoFarmStatus = "IDLE"
+            autoFarmWaitTime = 0
+            continue 
+        end
+        
+        if isHopping then continue end 
+        
+        local myTeam = LocalPlayer.Team
+        local teamName = myTeam and myTeam.Name:lower() or ""
+        
+        if autoFarmStatus == "IDLE" or autoFarmStatus == "WAITING_IN_LOBBY" then
+            if teamName:find("killer") or teamName:find("murder") then
+                SendNotification("Auto Farm", "Role Killer terdeteksi! Hop ke server sepi...", 4)
+                FetchAndHop("Small")
+                autoFarmStatus = "HOPPING"
+            elseif teamName:find("survivor") or teamName:find("player") then
+                SendNotification("Auto Farm", "Match mulai (Survivor)! Menunggu 10 detik...", 4)
+                autoFarmStatus = "PREPARING_SURVIVOR"
+                autoFarmWaitTime = tick()
+            else
+                if autoFarmStatus == "IDLE" then
+                    SendNotification("Auto Farm", "Menunggu match dimulai (Maks 2 Menit)...", 4)
+                    autoFarmStatus = "WAITING_IN_LOBBY"
+                    autoFarmWaitTime = tick()
+                elseif autoFarmStatus == "WAITING_IN_LOBBY" then
+                    if tick() - autoFarmWaitTime >= 120 then
+                        SendNotification("Auto Farm", "2 Menit berlalu tanpa match! Hop server...", 4)
+                        FetchAndHop("Small")
+                        autoFarmStatus = "HOPPING"
+                    end
+                end
+            end
+        elseif autoFarmStatus == "PREPARING_SURVIVOR" then
+            if tick() - autoFarmWaitTime >= 10 then
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and MapObjects.Finishlines and #MapObjects.Finishlines > 0 then
+                    local finish = MapObjects.Finishlines[1]
+                    hrp.CFrame = CFrame.new(finish.Position + Vector3.new(0, 1, 0))
+                    hrp.Velocity = Vector3.new(0,0,0)
+                    SendNotification("Auto Farm", "Berhasil TP ke Finishline! Mengecek status Win...", 4)
+                    autoFarmStatus = "WAITING_WIN"
+                    autoFarmWaitTime = tick()
+                else
+                    SendNotification("Auto Farm", "Finishline belum siap. Menunggu map render...", 2)
+                    autoFarmWaitTime = tick() - 7 
+                end
+            end
+        elseif autoFarmStatus == "WAITING_WIN" then
+            if teamName:find("spectator") or teamName:find("lobby") or teamName:find("menu") then
+                SendNotification("Auto Farm", "Match Selesai/Win! Pindah server untuk farm lagi...", 4)
+                FetchAndHop("Small")
+                autoFarmStatus = "HOPPING"
+            elseif tick() - autoFarmWaitTime >= 7 then
+                SendNotification("Auto Farm", "Stuck di Finishline (Match nge-bug). Hop server...", 4)
+                FetchAndHop("Small")
+                autoFarmStatus = "HOPPING"
+            end
+        end
+    end
+end)
+
+
+-- ==================== MAIN AUTOMATION LOOP (GARBAGE COLLECTOR) ====================
 local staticUpdateCounter = 0
 
 task.spawn(function()
     while task.wait(0.1) do  
-        if not isRunning then break end 
+        if not isRunning() then break end 
         staticUpdateCounter = staticUpdateCounter + 1
         
         for _, p in ipairs(Players:GetPlayers()) do
@@ -662,14 +874,39 @@ task.spawn(function()
         end
 
         if MapObjects.Generators then 
-            for _, gen in ipairs(MapObjects.Generators) do DrawESP(gen, Color3.fromRGB(255, 255, 0), Config["ESP Generator"], false, true, "") end 
+            for i = #MapObjects.Generators, 1, -1 do
+                local gen = MapObjects.Generators[i]
+                if not gen or not gen.Parent then table.remove(MapObjects.Generators, i)
+                else DrawESP(gen, Color3.fromRGB(255, 255, 0), Config["ESP Generator"], false, true, "") end
+            end 
         end
 
         if staticUpdateCounter >= 10 then
             staticUpdateCounter = 0
-            if MapObjects.Pallets then for _, pal in ipairs(MapObjects.Pallets) do DrawESP(pal, Color3.fromRGB(255, 150, 0), Config["ESP Pallet"], false, false, "") end end
-            if MapObjects.Windows then for _, win in ipairs(MapObjects.Windows) do DrawESP(win, Color3.fromRGB(0, 255, 255), Config["ESP Window"], false, false, "", true) end end
-            if MapObjects.Gates then for _, gate in ipairs(MapObjects.Gates) do DrawESP(gate, Color3.fromRGB(255, 0, 255), Config["ESP Gate"], false, false, "") end end
+            if MapObjects.Pallets then 
+                for i = #MapObjects.Pallets, 1, -1 do
+                    local pal = MapObjects.Pallets[i]
+                    if not pal or not pal.Parent then table.remove(MapObjects.Pallets, i) else DrawESP(pal, Color3.fromRGB(255, 150, 0), Config["ESP Pallet"], false, false, "") end
+                end 
+            end
+            if MapObjects.Windows then 
+                for i = #MapObjects.Windows, 1, -1 do
+                    local win = MapObjects.Windows[i]
+                    if not win or not win.Parent then table.remove(MapObjects.Windows, i) else DrawESP(win, Color3.fromRGB(0, 255, 255), Config["ESP Window"], false, false, "", true) end
+                end 
+            end
+            if MapObjects.Gates then 
+                for i = #MapObjects.Gates, 1, -1 do
+                    local gate = MapObjects.Gates[i]
+                    if not gate or not gate.Parent then table.remove(MapObjects.Gates, i) else DrawESP(gate, Color3.fromRGB(255, 0, 255), Config["ESP Gate"], false, false, "") end
+                end 
+            end
+            if MapObjects.Finishlines then 
+                for i = #MapObjects.Finishlines, 1, -1 do
+                    local finish = MapObjects.Finishlines[i]
+                    if not finish or not finish.Parent then table.remove(MapObjects.Finishlines, i) end
+                end 
+            end
         end
     end
 end)
