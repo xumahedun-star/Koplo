@@ -101,7 +101,7 @@ local function SendWebhook(webhookUrl, isTest)
 
     local embedData = {
         ["title"] = isTest and "🔧 TEST WEBHOOK" or "📊 Statistik Auto Farm",
-        ["description"] = "✅ Auto Escape Berhasil!",
+        ["description"] = "✅",
         ["color"] = 65280, 
         ["fields"] = {
             {["name"] = "👤 Username", ["value"] = LocalPlayer.Name, ["inline"] = false},
@@ -1325,7 +1325,7 @@ task.spawn(function()
                     autoFarmStatus = "WAITING_IN_LOBBY"
                     autoFarmWaitTime = tick()
                 elseif autoFarmStatus == "WAITING_IN_LOBBY" then
-                    if tick() - autoFarmWaitTime >= 120 then
+                    if tick() - autoFarmWaitTime >= 150 then
                         SendNotification("Auto Farm", "Timeout! Hopping...", 3)
                         autoFarmStatus = "HOPPING"
                         autoFarmWaitTime = tick()
