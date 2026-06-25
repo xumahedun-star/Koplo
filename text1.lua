@@ -32,7 +32,7 @@ end
 local isRunning = function() return getgenv().KemantapanBot_Active end
 local Config = {} 
 local ToggleFunctions = {} 
-local ConfigFileName = "KemantapanHub_ConfigV30_Final.json"
+local ConfigFileName = "KemantapanHub_ConfigV32.json"
 
 local function SaveConfig() pcall(function() if writefile then writefile(ConfigFileName, HttpService:JSONEncode(Config)) end end) end
 local function LoadConfig() pcall(function() if isfile and isfile(ConfigFileName) then local decoded = HttpService:JSONDecode(readfile(ConfigFileName)); if decoded then for k, v in pairs(decoded) do Config[k] = v end end end end) end
@@ -48,63 +48,51 @@ if Config["Webhook Auto Farm"] == nil then Config["Webhook Auto Farm"] = false e
 
 if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() end
 
--- ==================== WEBHOOK SENDER SYSTEM (BRUTE FORCE SCANNER) ====================
+-- ==================== WEBHOOK SENDER SYSTEM (ANTI-ERROR) ====================
 local function SendWebhook(webhookUrl, isTest)
     if not webhookUrl or webhookUrl == "" or webhookUrl == "URL_DISINI" then return end
     local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
     if not requestFunc then SendNotification("Error", "Executor tidak support Webhook.", 3); return end
 
-    -- Smart Scanner: Deteksi data spesifik dari folder, atribut, dan leaderstats
     local function getStat(statName, altNames)
-        local namesToCheck = {statName}
-        if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
-        
-        -- 1. Cek Folder Data Tersembunyi (Sering dipake dev untuk nyimpen currency)
-        local hiddenFolders = {"Data", "Stats", "leaderstats", "Currencies", "PlayerStats"}
-        for _, folderName in ipairs(hiddenFolders) do
-            local folder = LocalPlayer:FindFirstChild(folderName)
-            if folder then
-                for _, name in ipairs(namesToCheck) do
-                    local stat = folder:FindFirstChild(name)
-                    if stat then return tostring(stat.Value) end
+        local result = "Tidak Detek"
+        pcall(function()
+            local namesToCheck = {statName}
+            if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
+            
+            -- Cek folder stats umum
+            local hiddenFolders = {"Data", "Stats", "leaderstats", "Currencies"}
+            for _, folderName in ipairs(hiddenFolders) do
+                local folder = LocalPlayer:FindFirstChild(folderName)
+                if folder then
+                    for _, name in ipairs(namesToCheck) do
+                        local stat = folder:FindFirstChild(name)
+                        if stat then result = tostring(stat.Value); return end
+                    end
                 end
             end
-        end
 
-        -- 2. Cek Attributes
-        for _, name in ipairs(namesToCheck) do
-            local attr = LocalPlayer:GetAttribute(name)
-            if attr ~= nil then return tostring(attr) end
-        end
-
-        -- 3. Mode Brutal: Cari kemiripan nama di Attributes
-        for attrName, attrValue in pairs(LocalPlayer:GetAttributes()) do
-            if attrName:lower():find(statName:lower()) then return tostring(attrValue) end
-        end
-
-        -- 4. Mode Brutal: Cari kemiripan nama di semua folder stats
-        for _, folderName in ipairs(hiddenFolders) do
-            local folder = LocalPlayer:FindFirstChild(folderName)
-            if folder then
-                for _, child in ipairs(folder:GetChildren()) do
-                    if child.Name:lower():find(statName:lower()) then return tostring(child.Value) end
-                end
+            -- Cek dari attributes player
+            for _, name in ipairs(namesToCheck) do
+                local attr = LocalPlayer:GetAttribute(name)
+                if attr ~= nil then result = tostring(attr); return end
             end
-        end
-
-        return "Tidak Detek"
+        end)
+        return result
     end
 
     local lvl = getStat("Level", {"Lvl", "Rank"})
     local exp = getStat("EXP", {"Exp", "Experience"})
     local gears = getStat("Gears", {"Gear", "Silver", "Koin"})
     local screw = getStat("Screws", {"Screw", "Baut", "Parts"})
-    -- Target sin diperluas dengan alias nama developer paling umum
-    local sin = getStat("Sin", {"Sins", "TotalSin", "Total Sins", "RedToken", "RedTokens", "RedSkull", "Bloodpoints", "Blood", "Evil", "Merah", "Tengkorak"}) 
+    
+    -- Khusus stat Sin karena hidden untuk matchmaking
+    local sin = getStat("Sin", {"Sins", "TotalSin"}) 
+    if sin == "Tidak Detek" then sin = "Hidden (Stat Matchmaking)" end
 
     local embedData = {
         ["title"] = isTest and "🔧 TEST WEBHOOK" or "📊 Statistik Auto Farm",
-        ["description"] = "Kemantapan Auto Farm System",
+        ["description"] = "✅ Auto Escape Berhasil!",
         ["color"] = 65280, 
         ["fields"] = {
             {["name"] = "👤 Username", ["value"] = LocalPlayer.Name, ["inline"] = false},
@@ -250,8 +238,10 @@ end
 -- ==================== UI & SERVER HOP SETUP ====================
 local isHopping = false
 
-TeleportService.TeleportInitFailed:Connect(function()
-    isHopping = false
+pcall(function()
+    TeleportService.TeleportInitFailed:Connect(function()
+        isHopping = false
+    end)
 end)
 
 local function FetchAndHop(mode)
@@ -282,7 +272,7 @@ local function FetchAndHop(mode)
                         end
                     end
                     SendNotification("Hopping", "Menyambung ke Server...", 3)
-                    TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[1].id, LocalPlayer)
+                    pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[1].id, LocalPlayer) end)
                     task.wait(4)
                     isHopping = false 
                     return
@@ -374,7 +364,7 @@ local TitleText = Instance.new("TextLabel", TitleBar)
 TitleText.Size = UDim2.new(1, -40, 1, 0)
 TitleText.Position = UDim2.new(0, 10, 0, 0)
 TitleText.BackgroundTransparency = 1
-TitleText.Text = "Kemantapan Hub | V31 (WebHook Fix + Delay EXP)"
+TitleText.Text = "Kemantapan Hub | V32 (Safe Exe & Smart Farm)"
 TitleText.TextColor3 = Color3.fromRGB(15, 15, 15)
 TitleText.Font = Enum.Font.GothamBold
 TitleText.TextSize = 12
@@ -615,7 +605,7 @@ Tabs[1].Btn.TextColor3 = Color3.fromRGB(255, 215, 0)
 local InfoTxt = Instance.new("TextLabel", TabInfo)
 InfoTxt.Size = UDim2.new(1, 0, 0, 70)
 InfoTxt.BackgroundTransparency = 1
-InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: WEBHOOK INTEGRATED & AUTO FARM READY!"
+InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: ANTI-ERROR & SMART FARM READY!"
 InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255)
 InfoTxt.Font = Enum.Font.Gotham
 InfoTxt.TextSize = 12
@@ -898,7 +888,7 @@ end
 -- PENGATURAN TAB 
 CreateScriptButton(TabSet, "💾 Save Config (Manual)", function() SaveConfig() SendNotification("Save", "Config tersimpan", 2) end, Color3.fromRGB(35, 100, 35))
 CreateScriptButton(TabSet, "⚠️ Reset Config", function() ConfirmOverlay.Visible = true end, Color3.fromRGB(150, 35, 35))
-CreateScriptButton(TabSet, "Rejoin Server Current", function() SendNotification("Rejoin", "Menyambung...", 3); task.wait(0.5); TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer) end)
+CreateScriptButton(TabSet, "Rejoin Server Current", function() SendNotification("Rejoin", "Menyambung...", 3); task.wait(0.5); pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer) end) end)
 CreateScriptButton(TabSet, "🌐 Find New Server (Fast)", function() FetchAndHop("Normal") end, Color3.fromRGB(40, 40, 150))
 CreateScriptButton(TabSet, "📉 Find Small Server (Sepi)", function() FetchAndHop("Small") end, Color3.fromRGB(139, 69, 19))
 
@@ -1255,7 +1245,7 @@ task.spawn(function()
     end
 end)
 
--- ==================== AUTO FARM SURVIVOR (DELAY EXP FIX) ====================
+-- ==================== AUTO FARM SURVIVOR (SMART LOGIC) ====================
 local autoFarmWaitTime = 0
 local autoFarmStatus = "IDLE"
 
@@ -1307,6 +1297,8 @@ task.spawn(function()
                     end
                 end
             end
+        
+        -- LOGIKA BARU: Tunggu 19 detik, TP ke Finishline, lalu tunggu sampai jadi Spectator
         elseif autoFarmStatus == "PREPARING_SURVIVOR" then
             if tick() - autoFarmWaitTime >= 19 then 
                 local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1314,31 +1306,35 @@ task.spawn(function()
                     local finish = MapObjects.Finishlines[1]
                     hrp.CFrame = CFrame.new(finish.Position + Vector3.new(0, 1, 0))
                     hrp.Velocity = Vector3.new(0,0,0)
-                    SendNotification("Auto Farm", "TP Finishline! Cek status...", 3)
-                    autoFarmStatus = "WAITING_WIN"
+                    SendNotification("Auto Farm", "TP Finishline! Nunggu Spectator...", 3)
+                    autoFarmStatus = "WAITING_SPECTATOR"
                     autoFarmWaitTime = tick()
                 else
                     SendNotification("Auto Farm", "Map blm siap. Tunggu...", 2)
                     autoFarmWaitTime = tick() - 14 
                 end
             end
-        elseif autoFarmStatus == "WAITING_WIN" then
+        
+        -- Nunggu jadi Spectator
+        elseif autoFarmStatus == "WAITING_SPECTATOR" then
             if teamName:find("spectator") or teamName:find("lobby") or teamName:find("menu") then
-                SendNotification("Auto Farm", "Win! Tunggu 1.5 detik utk EXP...", 3)
+                SendNotification("Auto Farm", "Jadi Spectator! Delay 1.5 detik...", 3)
                 autoFarmStatus = "DELAY_BEFORE_HOP"
                 autoFarmWaitTime = tick()
-            elseif tick() - autoFarmWaitTime >= 7 then
-                SendNotification("Auto Farm", "Bug terdeteksi! Hopping...", 3)
+            elseif tick() - autoFarmWaitTime >= 20 then -- Fallback kalau kelamaan stuck
+                SendNotification("Auto Farm", "Bug kelamaan stuck! Hopping...", 3)
                 autoFarmStatus = "HOPPING"
                 autoFarmWaitTime = tick()
                 FetchAndHop("Small")
             end
+            
+        -- Delay 1.5 detik buat nunggu EXP, kirim webhook, lalu Hop
         elseif autoFarmStatus == "DELAY_BEFORE_HOP" then
             if tick() - autoFarmWaitTime >= 1.5 then
                 if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
                     SendWebhook(Config["Webhook Auto Farm Value"], false)
                 end
-                SendNotification("Auto Farm", "EXP Masuk! Mengirim Webhook & Hopping...", 3)
+                SendNotification("Auto Farm", "Webhook Terkirim! Hopping...", 3)
                 autoFarmStatus = "HOPPING"
                 autoFarmWaitTime = tick()
                 FetchAndHop("Small")
