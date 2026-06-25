@@ -48,38 +48,40 @@ if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() en
 local function SendWebhook(webhookUrl, isTest)
     if not webhookUrl or webhookUrl == "" or webhookUrl == "URL_DISINI" then return end
     local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
-    if not requestFunc then SendNotification("Error", "Executor tidak support Webhook (HTTP Request).", 4); return end
+    if not requestFunc then SendNotification("Error", "Executor tidak support Webhook.", 3); return end
 
-    local embedFields = {
-        {["name"] = "👤 Username", ["value"] = "```" .. LocalPlayer.Name .. "```", ["inline"] = false}
-    }
-
-    local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-    
-    if leaderstats then
-        for _, stat in ipairs(leaderstats:GetChildren()) do
-            if stat:IsA("IntValue") or stat:IsA("NumberValue") or stat:IsA("StringValue") then
-                table.insert(embedFields, {
-                    ["name"] = "📊 " .. stat.Name,
-                    ["value"] = "```" .. tostring(stat.Value) .. "```",
-                    ["inline"] = true
-                })
-            end
+    local function getStat(statName, altNames)
+        local namesToCheck = {statName}
+        if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
+        
+        for _, name in ipairs(namesToCheck) do
+            local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+            if leaderstats and leaderstats:FindFirstChild(name) then return tostring(leaderstats[name].Value) end
+            local attr = LocalPlayer:GetAttribute(name)
+            if attr then return tostring(attr) end
         end
-    else
-        table.insert(embedFields, {
-            ["name"] = "⚠️ Peringatan",
-            ["value"] = "```Folder leaderstats tidak ditemukan di player ini.```",
-            ["inline"] = false
-        })
+        return "N/A"
     end
 
+    local lvl = getStat("Level", {"Lvl"})
+    local exp = getStat("EXP", {"Exp", "Experience"})
+    local gears = getStat("Gears", {"Gear"})
+    local screw = getStat("Screws", {"Screw", "Baut"})
+    local sin = getStat("Sin", {"Sins", "TotalSin", "Merah", "Tengkorak"})
+
     local embedData = {
-        ["title"] = isTest and "🔧 TEST WEBHOOK AUTO FARM" or "🏆 AUTO FARM BERHASIL ESCAPE!",
-        ["description"] = "Data otomatis ditarik dari leaderstats Violent District.",
-        ["color"] = isTest and 16776960 or 65280, 
-        ["fields"] = embedFields,
-        ["footer"] = {["text"] = "Kemantapan Hub Auto Farm V30 (Dynamic Leaderstats)"}
+        ["title"] = isTest and "🔧 TEST WEBHOOK" or "📊 Statistik Auto Farm",
+        ["description"] = "Auto Farm!",
+        ["color"] = 65280, 
+        ["fields"] = {
+            {["name"] = "👤 Username", ["value"] = LocalPlayer.Name, ["inline"] = false},
+            {["name"] = "📊 Level", ["value"] = lvl, ["inline"] = false},
+            {["name"] = "⭐ EXP", ["value"] = exp, ["inline"] = false},
+            {["name"] = "⚙️ Gears", ["value"] = gears, ["inline"] = false},
+            {["name"] = "🔩 Screws", ["value"] = screw, ["inline"] = false},
+            {["name"] = "💀 Total Sin", ["value"] = sin, ["inline"] = false}
+        },
+        ["footer"] = {["text"] = "Kemantapan Hub Script"}
     }
 
     local payload = HttpService:JSONEncode({content = "", embeds = {embedData}})
@@ -100,12 +102,12 @@ if hookmetamethod then
         if isRunning() and method == "FireServer" then
             local remoteName = tostring(self)
             if remoteName == "SkillCheckResultEvent" then
-                if Config["Auto Gen (Metata)"] or Config["Auto Gen (Fire Instan)"] then
+                if Config["Auto Gen (Metata)"] or Config["Auto Gen (Fire Instan)"] or Config["Auto Skill Check [LEGIT]"] then
                     args[1], args[2] = "success", 1
                     return oldNamecall(self, unpack(args))
                 end
             elseif remoteName == "KingScourgeHit" then
-                if Config["Auto Gen (Metata)"] or Config["Auto Gen (Fire Instan)"] then
+                if Config["Auto Gen (Metata)"] or Config["Auto Gen (Fire Instan)"] or Config["Auto Skill Check [LEGIT]"] then
                     args[2] = "success" 
                     return oldNamecall(self, unpack(args))
                 end
@@ -120,7 +122,7 @@ if hookmetamethod then
     oldIndex = hookmetamethod(game, "__index", function(self, key)
         if not checkcaller() and isRunning() and key == "Rotation" then
             if typeof(self) == "Instance" and self.Name == "Line" and self:IsA("GuiObject") then
-                if Config["Auto Gen (Fire Instan)"] or Config["Auto Gen (Metata)"] then
+                if Config["Auto Gen (Fire Instan)"] or Config["Auto Gen (Metata)"] or Config["Auto Skill Check [LEGIT]"] then
                     local goal = self.Parent and self.Parent:FindFirstChild("Goal")
                     if goal and goal:IsA("GuiObject") then return goal.Rotation + 109 end
                 end
@@ -212,7 +214,6 @@ end
 -- ==================== UI & SERVER HOP SETUP (WITH AUTO-RETRY) ====================
 local isHopping = false
 
--- DETEKSI KALAU TELEPORT GAGAL DARI ROBLOX
 TeleportService.TeleportInitFailed:Connect(function()
     isHopping = false
 end)
@@ -223,7 +224,7 @@ local function FetchAndHop(mode)
     task.spawn(function()
         local ApiUrl = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?limit=100&sortOrder=" .. (mode == "Small" and "Asc" or "Desc")
         local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
-        if not requestFunc then SendNotification("Error", "Executor tidak support HTTP request.", 4); isHopping = false; return end
+        if not requestFunc then SendNotification("Error", "Executor tidak support HTTP request.", 3); isHopping = false; return end
         
         local success, response = pcall(function() return requestFunc({Url = ApiUrl, Method = "GET"}) end)
         if success and response.StatusCode == 200 then
@@ -239,16 +240,15 @@ local function FetchAndHop(mode)
                     if mode == "Small" then table.sort(candidates, function(a, b) return a.playing < b.playing end) else
                         for i = #candidates, 2, -1 do local j = math.random(i); candidates[i], candidates[j] = candidates[j], candidates[i] end
                     end
-                    SendNotification("Hop Server", "Menyambungkan ke Server Baru...", 4)
+                    SendNotification("Hopping", "Menyambung ke Server...", 3)
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[1].id, LocalPlayer)
                     
-                    task.wait(4) -- Kasih waktu 4 detik, kalau masih belum pindah berarti nyangkut
+                    task.wait(4)
                     isHopping = false 
                     return
                 end
             end
         end
-        -- Kalau sampai di sini berarti gagal fetch/nggak ada server
         isHopping = false
     end)
 end
@@ -368,7 +368,7 @@ CreateScriptButton(TabSurv, "🏆 1-Klik Win Survivor (Instan Escape)", function
     if MapObjects.Finishlines and #MapObjects.Finishlines > 0 then
         hrp.CFrame = CFrame.new(MapObjects.Finishlines[1].Position + Vector3.new(0, 1, 0))
         hrp.Velocity = Vector3.new(0,0,0)
-        SendNotification("WIN!", "Teleportasi ke Finish Line berhasil!", 3)
+        SendNotification("WIN!", "TP Finishline Berhasil!", 3)
     else
         local map = Workspace:FindFirstChild("Map") or Workspace:FindFirstChild("map")
         local found = false
@@ -376,11 +376,11 @@ CreateScriptButton(TabSurv, "🏆 1-Klik Win Survivor (Instan Escape)", function
             for _, v in ipairs(map:GetDescendants()) do
                 if v:IsA("BasePart") and (v.Name:lower() == "fininshline" or v.Name:lower() == "finishline") then
                     hrp.CFrame = CFrame.new(v.Position + Vector3.new(0, 1, 0)); hrp.Velocity = Vector3.new(0,0,0)
-                    SendNotification("WIN!", "Teleportasi ke Finish Line berhasil!", 3); found = true; break
+                    SendNotification("WIN!", "TP Finishline Berhasil!", 3); found = true; break
                 end
             end
         end
-        if not found then SendNotification("Error", "Finish Line belum di-render/ditemukan di map.", 3) end
+        if not found then SendNotification("Error", "Finishline belum siap.", 3) end
     end
 end, Color3.fromRGB(40, 160, 40))
 
@@ -389,9 +389,9 @@ CreateStringInputToggle(TabSurv, "Webhook Auto Farm", "URL_DISINI", function(sta
 CreateScriptButton(TabSurv, "📡 Test Webhook Status", function()
     if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
         SendWebhook(Config["Webhook Auto Farm Value"], true)
-        SendNotification("Webhook", "Mengirim Test ke Discord...", 3)
+        SendNotification("Webhook", "Mengirim Test...", 3)
     else
-        SendNotification("Error", "Isi URL Webhook & Nyalakan Toggle-nya Dulu!", 3)
+        SendNotification("Error", "Isi Webhook & Nyalakan!", 3)
     end
 end, Color3.fromRGB(50, 100, 180))
 
@@ -441,7 +441,7 @@ local BtnTPExec = Instance.new("TextButton", ActionFrame); BtnTPExec.Size = UDim
 local BtnRefreshMap = Instance.new("TextButton", ActionFrame)
 BtnRefreshMap.Size = UDim2.new(1, 0, 0, 26); BtnRefreshMap.Position = UDim2.new(0, 0, 0, 52); BtnRefreshMap.BackgroundColor3 = Color3.fromRGB(200, 150, 40); BtnRefreshMap.Text = "🔄 REFRESH MAP LOG"; BtnRefreshMap.TextColor3 = Color3.fromRGB(255, 255, 255); BtnRefreshMap.Font = Enum.Font.GothamBold; BtnRefreshMap.TextSize = 12; Instance.new("UICorner", BtnRefreshMap).CornerRadius = UDim.new(0, 4)
 
-BtnRefreshMap.MouseButton1Click:Connect(function() MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Finishlines = {}}; SendNotification("Refresh Map", "Membersihkan log lama dan scan ulang...", 3); RefreshMapObjects() end)
+BtnRefreshMap.MouseButton1Click:Connect(function() MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Finishlines = {}}; SendNotification("Refresh Map", "Scan ulang map...", 3); RefreshMapObjects() end)
 
 local function RefreshPlayerList()
     for _, v in ipairs(PlayerScroll:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
@@ -470,7 +470,7 @@ end
 for i = 1, 7 do AddMapBtn("TP Generator " .. i, function() 
     local gens = {}
     if MapObjects.Generators then for _, v in ipairs(MapObjects.Generators) do table.insert(gens, v) end end
-    if #gens == 0 then SendNotification("Kosong", "Generator belum terdeteksi", 3) return end
+    if #gens == 0 then SendNotification("Kosong", "Gen belum terdeteksi", 3) return end
     table.sort(gens, function(a, b) 
         local posA, posB = getSafePos(a), getSafePos(b)
         if math.abs(posA.X - posB.X) < 2 then return posA.Z < posB.Z end
@@ -510,9 +510,9 @@ for i = 1, 2 do AddMapBtn("TP Gate " .. i, function()
 end) end
 
 -- PENGATURAN TAB 
-CreateScriptButton(TabSet, "💾 Save Config (Manual)", function() SaveConfig() SendNotification("Tersimpan", "Config berhasil disimpan", 2) end, Color3.fromRGB(35, 100, 35))
+CreateScriptButton(TabSet, "💾 Save Config (Manual)", function() SaveConfig() SendNotification("Save", "Config tersimpan", 2) end, Color3.fromRGB(35, 100, 35))
 CreateScriptButton(TabSet, "⚠️ Reset Config", function() ConfirmOverlay.Visible = true end, Color3.fromRGB(150, 35, 35))
-CreateScriptButton(TabSet, "Rejoin Server Current", function() SendNotification("Rejoin", "Menyambung ulang...", 3); task.wait(0.5); TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer) end)
+CreateScriptButton(TabSet, "Rejoin Server Current", function() SendNotification("Rejoin", "Menyambung...", 3); task.wait(0.5); TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer) end)
 CreateScriptButton(TabSet, "🌐 Find New Server (Fast)", function() FetchAndHop("Normal") end, Color3.fromRGB(40, 40, 150))
 CreateScriptButton(TabSet, "📉 Find Small Server (Sepi)", function() FetchAndHop("Small") end, Color3.fromRGB(139, 69, 19))
 
@@ -621,7 +621,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ==================== THE GOD MODE QTE LOOP (ANTI-GLITCH LOBBY) ====================
+-- ==================== THE GOD MODE QTE LOOP (LEGIT = 1.2s DELAY) ====================
 local isClicking = false 
 
 local function ExecuteClickUI()
@@ -651,52 +651,13 @@ local function HandleQTEProcess(ui, isLegitMode)
     if isClicking then return end
     isClicking = true
     task.spawn(function()
-        local rootUI = (ui.Parent and ui.Parent:IsA("GuiObject") and (ui.Parent.Name:lower():find("skill") or ui.Parent.Name:lower():find("qte"))) and ui.Parent or ui
-        local pointer, targetArea = nil, nil
-        for _, v in ipairs(rootUI:GetDescendants()) do
-            if v:IsA("GuiObject") and v.Visible then
-                local vName = v.Name:lower()
-                if vName == "goal" or vName:find("perfect") then targetArea = v end
-                if vName == "line" or vName:find("pointer") or vName:find("jarum") then pointer = v end
-            end
-        end
-
-        if not isLegitMode then
-            task.wait(0.1) 
+        if isLegitMode then
+            task.wait(1.2) -- DELAY 1,2 DETIK UNTUK LEGIT SESUAI REQUEST
             ExecuteClickUI()
             task.wait(0.35)
         else
-            if pointer and targetArea then
-                local clicked = false
-                local renderConn
-                local lastRot = pointer.Rotation
-                
-                renderConn = RunService.RenderStepped:Connect(function()
-                    local tName = LocalPlayer.Team and LocalPlayer.Team.Name:lower() or ""
-                    if tName:find("lobby") or tName:find("spectator") or not (ui.Visible and isRunning()) or clicked then
-                        if renderConn then renderConn:Disconnect() end
-                        return
-                    end
-                    
-                    local currentRot = pointer.Rotation
-                    local goalRot = targetArea.Rotation
-                    local perfectStart = 102 + goalRot
-                    local perfectEnd = 116 + goalRot
-                    
-                    if (currentRot >= perfectStart + 1 and currentRot <= perfectEnd) or (lastRot < perfectStart and currentRot >= perfectStart) then
-                        clicked = true
-                        ExecuteClickUI()
-                        if renderConn then renderConn:Disconnect() end
-                    end
-                    lastRot = currentRot
-                end)
-                
-                task.delay(3, function() if renderConn then renderConn:Disconnect() end; clicked = true end)
-                while not clicked and ui.Visible and isRunning() do task.wait(0.05) end
-            else
-                task.wait(math.random(60, 90) / 100)
-                ExecuteClickUI()
-            end
+            task.wait(0.1) 
+            ExecuteClickUI()
             task.wait(0.35)
         end
         isClicking = false
@@ -814,7 +775,7 @@ task.spawn(function()
                 local finish = MapObjects.Finishlines[1]
                 if finish and (hrp.Position - finish.Position).Magnitude > 5 then
                     hrp.CFrame = CFrame.new(finish.Position + Vector3.new(0, 1, 0)); hrp.Velocity = Vector3.new(0,0,0)
-                    matchEnded = true; SendNotification("Bot Info", "Win/Knocked terdeteksi. Menunggu di Finishline...", 3)
+                    matchEnded = true; SendNotification("Bot Info", "Win/Knock terdeteksi. TP ke Finishline.", 3)
                 end
             end
             continue 
@@ -872,7 +833,7 @@ task.spawn(function()
 end)
 
 
--- ==================== AUTO FARM SURVIVOR (DENGAN RETRY 2 DETIK) ====================
+-- ==================== AUTO FARM SURVIVOR (TIMING REWORKED) ====================
 local autoFarmWaitTime = 0
 local autoFarmStatus = "IDLE"
 
@@ -889,7 +850,6 @@ task.spawn(function()
         local teamName = myTeam and myTeam.Name:lower() or ""
 
         if autoFarmStatus == "HOPPING" then
-            -- JIKA GAGAL HOP/MASIH STUCK SETELAH 2 DETIK (RETRY SISTEM)
             if not isHopping then
                 if tick() - autoFarmWaitTime >= 2 then
                     autoFarmWaitTime = tick()
@@ -903,22 +863,22 @@ task.spawn(function()
         
         if autoFarmStatus == "IDLE" or autoFarmStatus == "WAITING_IN_LOBBY" then
             if teamName:find("killer") or teamName:find("murder") then
-                SendNotification("Auto Farm", "Role Killer terdeteksi! Hop ke server sepi...", 4)
+                SendNotification("Auto Farm", "Role Killer! Hopping...", 3)
                 autoFarmStatus = "HOPPING"
                 autoFarmWaitTime = tick()
                 FetchAndHop("Small")
             elseif teamName:find("survivor") or teamName:find("player") then
-                SendNotification("Auto Farm", "Match mulai (Survivor)! Menunggu 23 detik sebelum TP...", 4)
+                SendNotification("Auto Farm", "Match Survivor! Tunggu 19s...", 3)
                 autoFarmStatus = "PREPARING_SURVIVOR"
                 autoFarmWaitTime = tick()
             else
                 if autoFarmStatus == "IDLE" then
-                    SendNotification("Auto Farm", "Menunggu match dimulai (Maks 2 Menit)...", 4)
+                    SendNotification("Auto Farm", "Menunggu match...", 3)
                     autoFarmStatus = "WAITING_IN_LOBBY"
                     autoFarmWaitTime = tick()
                 elseif autoFarmStatus == "WAITING_IN_LOBBY" then
                     if tick() - autoFarmWaitTime >= 120 then
-                        SendNotification("Auto Farm", "2 Menit berlalu tanpa match! Hop server...", 4)
+                        SendNotification("Auto Farm", "Timeout! Hopping...", 3)
                         autoFarmStatus = "HOPPING"
                         autoFarmWaitTime = tick()
                         FetchAndHop("Small")
@@ -926,23 +886,23 @@ task.spawn(function()
                 end
             end
         elseif autoFarmStatus == "PREPARING_SURVIVOR" then
-            if tick() - autoFarmWaitTime >= 23 then
+            if tick() - autoFarmWaitTime >= 19 then -- DIUBAH KE 19 DETIK
                 local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if hrp and MapObjects.Finishlines and #MapObjects.Finishlines > 0 then
                     local finish = MapObjects.Finishlines[1]
                     hrp.CFrame = CFrame.new(finish.Position + Vector3.new(0, 1, 0))
                     hrp.Velocity = Vector3.new(0,0,0)
-                    SendNotification("Auto Farm", "Berhasil TP ke Finishline! Mengecek status Win...", 4)
+                    SendNotification("Auto Farm", "TP Finishline! Cek status...", 3)
                     autoFarmStatus = "WAITING_WIN"
                     autoFarmWaitTime = tick()
                 else
-                    SendNotification("Auto Farm", "Finishline belum siap. Menunggu map render...", 2)
-                    autoFarmWaitTime = tick() - 18 
+                    SendNotification("Auto Farm", "Map blm siap. Tunggu...", 2)
+                    autoFarmWaitTime = tick() - 14 -- DELAY RETRY 5 DETIK
                 end
             end
         elseif autoFarmStatus == "WAITING_WIN" then
             if teamName:find("spectator") or teamName:find("lobby") or teamName:find("menu") then
-                SendNotification("Auto Farm", "Match Selesai/Win! Pindah server untuk farm lagi...", 4)
+                SendNotification("Auto Farm", "Win! Hopping next server...", 3)
                 
                 if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
                     SendWebhook(Config["Webhook Auto Farm Value"], false)
@@ -952,7 +912,7 @@ task.spawn(function()
                 autoFarmWaitTime = tick()
                 FetchAndHop("Small")
             elseif tick() - autoFarmWaitTime >= 7 then
-                SendNotification("Auto Farm", "Stuck di Finishline (Match nge-bug). Hop server...", 4)
+                SendNotification("Auto Farm", "Bug terdeteksi! Hopping...", 3)
                 autoFarmStatus = "HOPPING"
                 autoFarmWaitTime = tick()
                 FetchAndHop("Small")
