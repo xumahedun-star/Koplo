@@ -5,15 +5,13 @@ if getgenv().KemantapanBot_Active then
 end
 getgenv().KemantapanBot_Active = true
 
--- ==================== SERVICES & VARIABLES ====================
-local CoreGui = game:GetService("CoreGui") or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+-- ==================== SERVICES & VARIABLES (FIXED FOR ANDROID) ====================
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,6 +19,21 @@ local LocalPlayer = Players.LocalPlayer
 
 local isMobile = UserInputService.TouchEnabled
 local lastGeneratorPoint = nil 
+
+-- [BYPASS DELTA 1] Ambil CoreGui dengan aman pakai gethui()
+local CoreGui
+if gethui then
+    CoreGui = gethui()
+else
+    local success, result = pcall(function() return game:GetService("CoreGui") end)
+    CoreGui = success and result or LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- [BYPASS DELTA 2] Ambil VirtualInputManager pake pcall biar ga crash
+local VirtualInputManager
+pcall(function() 
+    VirtualInputManager = game:GetService("VirtualInputManager") 
+end)
 
 local function SendNotification(title, text, duration)
     pcall(function() 
@@ -60,7 +73,6 @@ local function SendWebhook(webhookUrl, isTest)
             local namesToCheck = {statName}
             if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
             
-            -- Cek folder stats umum
             local hiddenFolders = {"Data", "Stats", "leaderstats", "Currencies"}
             for _, folderName in ipairs(hiddenFolders) do
                 local folder = LocalPlayer:FindFirstChild(folderName)
@@ -72,7 +84,6 @@ local function SendWebhook(webhookUrl, isTest)
                 end
             end
 
-            -- Cek dari attributes player
             for _, name in ipairs(namesToCheck) do
                 local attr = LocalPlayer:GetAttribute(name)
                 if attr ~= nil then result = tostring(attr); return end
@@ -85,8 +96,6 @@ local function SendWebhook(webhookUrl, isTest)
     local exp = getStat("EXP", {"Exp", "Experience"})
     local gears = getStat("Gears", {"Gear", "Silver", "Koin"})
     local screw = getStat("Screws", {"Screw", "Baut", "Parts"})
-    
-    -- Khusus stat Sin karena hidden untuk matchmaking
     local sin = getStat("Sin", {"Sins", "TotalSin"}) 
     if sin == "Tidak Detek" then sin = "Hidden (Stat Matchmaking)" end
 
@@ -235,13 +244,10 @@ local function GetGenProgress(gen)
     return highest
 end
 
--- ==================== UI & SERVER HOP SETUP ====================
+-- ==================== SERVER HOP SETUP ====================
 local isHopping = false
-
 pcall(function()
-    TeleportService.TeleportInitFailed:Connect(function()
-        isHopping = false
-    end)
+    TeleportService.TeleportInitFailed:Connect(function() isHopping = false end)
 end)
 
 local function FetchAndHop(mode)
@@ -283,6 +289,32 @@ local function FetchAndHop(mode)
     end)
 end
 
+-- ==================== SYSTEM DRAG UNTUK MOBILE (ANDROID FIX) ====================
+local function MakeMobileDraggable(frame)
+    local dragging, dragInput, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
 -- ==================== GUI CREATION ====================
 local ScreenGui = Instance.new("ScreenGui", CoreGui)
 ScreenGui.Name = "KemantapanUI"
@@ -296,9 +328,8 @@ ToggleR.TextColor3 = Color3.fromRGB(15, 15, 15)
 ToggleR.Font = Enum.Font.GothamBold
 ToggleR.TextSize = 18
 ToggleR.Text = "R"
-ToggleR.Active = true
-ToggleR.Draggable = true
 Instance.new("UICorner", ToggleR).CornerRadius = UDim.new(1, 0)
+MakeMobileDraggable(ToggleR)
 
 local Main = Instance.new("Frame", ScreenGui)
 Main.Size = UDim2.new(0, 470, 0, 320)
@@ -306,8 +337,7 @@ Main.Position = UDim2.new(0.5, -235, 0.5, -160)
 Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 Main.BorderColor3 = Color3.fromRGB(255, 215, 0)
 Main.BorderSizePixel = 2
-Main.Active = true
-Main.Draggable = true
+MakeMobileDraggable(Main)
 
 local ConfirmOverlay = Instance.new("Frame", Main)
 ConfirmOverlay.Size = UDim2.new(1, 0, 1, 0)
@@ -605,7 +635,7 @@ Tabs[1].Btn.TextColor3 = Color3.fromRGB(255, 215, 0)
 local InfoTxt = Instance.new("TextLabel", TabInfo)
 InfoTxt.Size = UDim2.new(1, 0, 0, 70)
 InfoTxt.BackgroundTransparency = 1
-InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: ANTI-ERROR & SMART FARM READY!"
+InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: MOBILE FIXED & READY!"
 InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255)
 InfoTxt.Font = Enum.Font.Gotham
 InfoTxt.TextSize = 12
@@ -1035,7 +1065,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ==================== THE GOD MODE QTE LOOP (ANTI-GLITCH) ====================
+-- ==================== THE GOD MODE QTE LOOP (ANDROID STABLE) ====================
 local isClicking = false 
 
 local function ExecuteClickUI()
@@ -1052,10 +1082,12 @@ local function ExecuteClickUI()
                 pcall(function() firesignal(actionBtn.MouseButton1Down); firesignal(actionBtn.MouseButton1Click); firesignal(actionBtn.Activated) end)
             end
         else
-            if not isMobile then
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                task.wait(0.01)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+            if VirtualInputManager and not isMobile then
+                pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                    task.wait(0.01)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                end)
             end
         end
     end)
@@ -1111,9 +1143,13 @@ local function TriggerInteractButton()
         local actionBtn = pg and pg:FindFirstChild("Survivor-mob") and pg["Survivor-mob"]:FindFirstChild("Controls") and pg["Survivor-mob"].Controls:FindFirstChild("action")
         if actionBtn then
             if firesignal then pcall(function() firesignal(actionBtn.MouseButton1Down); firesignal(actionBtn.MouseButton1Click); firesignal(actionBtn.Activated); firesignal(actionBtn.TouchTap) end) end
-            local cx = actionBtn.AbsolutePosition.X + (actionBtn.AbsoluteSize.X / 2)
-            local cy = actionBtn.AbsolutePosition.Y + (actionBtn.AbsoluteSize.Y / 2)
-            VirtualInputManager:SendTouchTapEvent(cx, cy, true, game); task.wait(0.05); VirtualInputManager:SendTouchTapEvent(cx, cy, false, game)
+            if VirtualInputManager then
+                local cx = actionBtn.AbsolutePosition.X + (actionBtn.AbsoluteSize.X / 2)
+                local cy = actionBtn.AbsolutePosition.Y + (actionBtn.AbsoluteSize.Y / 2)
+                pcall(function()
+                    VirtualInputManager:SendTouchTapEvent(cx, cy, true, game); task.wait(0.05); VirtualInputManager:SendTouchTapEvent(cx, cy, false, game)
+                end)
+            end
         end
         for _, prompt in ipairs(Workspace:GetDescendants()) do
             if prompt:IsA("ProximityPrompt") and prompt.ActionText:lower():find("repair") then
@@ -1298,7 +1334,6 @@ task.spawn(function()
                 end
             end
         
-        -- LOGIKA BARU: Tunggu 19 detik, TP ke Finishline, lalu tunggu sampai jadi Spectator
         elseif autoFarmStatus == "PREPARING_SURVIVOR" then
             if tick() - autoFarmWaitTime >= 19 then 
                 local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1315,20 +1350,18 @@ task.spawn(function()
                 end
             end
         
-        -- Nunggu jadi Spectator
         elseif autoFarmStatus == "WAITING_SPECTATOR" then
             if teamName:find("spectator") or teamName:find("lobby") or teamName:find("menu") then
                 SendNotification("Auto Farm", "Jadi Spectator! Delay 1.5 detik...", 3)
                 autoFarmStatus = "DELAY_BEFORE_HOP"
                 autoFarmWaitTime = tick()
-            elseif tick() - autoFarmWaitTime >= 20 then -- Fallback kalau kelamaan stuck
+            elseif tick() - autoFarmWaitTime >= 20 then 
                 SendNotification("Auto Farm", "Bug kelamaan stuck! Hopping...", 3)
                 autoFarmStatus = "HOPPING"
                 autoFarmWaitTime = tick()
                 FetchAndHop("Small")
             end
             
-        -- Delay 1.5 detik buat nunggu EXP, kirim webhook, lalu Hop
         elseif autoFarmStatus == "DELAY_BEFORE_HOP" then
             if tick() - autoFarmWaitTime >= 1.5 then
                 if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
@@ -1345,7 +1378,6 @@ end)
 
 -- ==================== MAIN AUTOMATION LOOP (GARBAGE COLLECTOR) ====================
 local staticUpdateCounter = 0
-
 task.spawn(function()
     while task.wait(0.1) do  
         if not isRunning() then break end 
