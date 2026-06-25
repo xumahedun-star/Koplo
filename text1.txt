@@ -69,31 +69,40 @@ local function SendWebhook(webhookUrl, isTest)
 
     local function getStat(statName, altNames)
         local result = "Tidak Detek"
+        
+        local namesToCheck = {statName}
+        if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
+
         pcall(function()
-            local namesToCheck = {statName}
-            if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
-            
-            local hiddenFolders = {"Data", "Stats", "leaderstats", "Currencies"}
+            local hiddenFolders = {"Data", "Stats", "leaderstats", "Currencies", "Total"}
             for _, folderName in ipairs(hiddenFolders) do
                 local folder = LocalPlayer:FindFirstChild(folderName)
                 if folder then
                     for _, name in ipairs(namesToCheck) do
                         local stat = folder:FindFirstChild(name)
-                        if stat then result = tostring(stat.Value); return end
+                        if stat then 
+                            result = tostring(stat.Value)
+                            return -- Langsung stop pcall kalau ketemu
+                        end
                     end
                 end
             end
 
+            -- Kalau nggak ketemu di folder, cari di Attribute
             for _, name in ipairs(namesToCheck) do
                 local attr = LocalPlayer:GetAttribute(name)
-                if attr ~= nil then result = tostring(attr); return end
+                if attr ~= nil then 
+                    result = tostring(attr)
+                    return -- Langsung stop pcall kalau ketemu
+                end
             end
         end)
         return result
     end
 
     local lvl = getStat("Level", {"Lvl", "Rank"})
-    local exp = getStat("EXP", {"Exp", "Experience"})
+    -- FIX: Memprioritaskan TotalExp sebelum Exp biasa biar gak kereset pas naik level
+    local exp = getStat("TotalExp", {"TotalExperience", "TotalEXP", "Total Exp", "EXP", "Exp", "Experience"})
     local gears = getStat("Gears", {"Gear", "Silver", "Koin"})
     local screw = getStat("Screws", {"Screw", "Baut", "Parts"})
     local sin = getStat("Sin", {"Sins", "TotalSin"}) 
@@ -101,12 +110,12 @@ local function SendWebhook(webhookUrl, isTest)
 
     local embedData = {
         ["title"] = isTest and "🔧 TEST WEBHOOK" or "📊 Statistik Auto Farm",
-        ["description"] = "✅",
+        ["description"] = "✅ Auto Escape Berhasil!",
         ["color"] = 65280, 
         ["fields"] = {
             {["name"] = "👤 Username", ["value"] = LocalPlayer.Name, ["inline"] = false},
             {["name"] = "📊 Level", ["value"] = lvl, ["inline"] = true},
-            {["name"] = "⭐ EXP", ["value"] = exp, ["inline"] = true},
+            {["name"] = "⭐ Total / Current EXP", ["value"] = exp, ["inline"] = true},
             {["name"] = "⚙️ Gears", ["value"] = gears, ["inline"] = true},
             {["name"] = "🔩 Screws", ["value"] = screw, ["inline"] = true},
             {["name"] = "💀 Total Sin", ["value"] = sin, ["inline"] = false}
@@ -1325,7 +1334,7 @@ task.spawn(function()
                     autoFarmStatus = "WAITING_IN_LOBBY"
                     autoFarmWaitTime = tick()
                 elseif autoFarmStatus == "WAITING_IN_LOBBY" then
-                    if tick() - autoFarmWaitTime >= 150 then
+                    if tick() - autoFarmWaitTime >= 120 then
                         SendNotification("Auto Farm", "Timeout! Hopping...", 3)
                         autoFarmStatus = "HOPPING"
                         autoFarmWaitTime = tick()
