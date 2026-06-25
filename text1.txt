@@ -61,52 +61,47 @@ if Config["Webhook Auto Farm"] == nil then Config["Webhook Auto Farm"] = false e
 
 if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() end
 
--- ==================== WEBHOOK SENDER SYSTEM (ANTI-ERROR) ====================
+-- ==================== WEBHOOK SENDER SYSTEM (SUPER ACCURATE) ====================
 local function SendWebhook(webhookUrl, isTest)
     if not webhookUrl or webhookUrl == "" or webhookUrl == "URL_DISINI" then return end
     local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
     if not requestFunc then SendNotification("Error", "Executor tidak support Webhook.", 3); return end
 
-    local function getStat(statName, altNames)
+    local function getStat(statNames)
         local result = "Tidak Detek"
-        
-        local namesToCheck = {statName}
-        if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
-
         pcall(function()
-            local hiddenFolders = {"Data", "Stats", "leaderstats", "Currencies", "Total"}
-            for _, folderName in ipairs(hiddenFolders) do
-                local folder = LocalPlayer:FindFirstChild(folderName)
-                if folder then
-                    for _, name in ipairs(namesToCheck) do
-                        local stat = folder:FindFirstChild(name)
-                        if stat then 
-                            result = tostring(stat.Value)
-                            return -- Langsung stop pcall kalau ketemu
-                        end
-                    end
-                end
-            end
-
-            -- Kalau nggak ketemu di folder, cari di Attribute
-            for _, name in ipairs(namesToCheck) do
+            for _, name in ipairs(statNames) do
+                -- 1. Cari di Attribute dulu (Prioritas Game Modern)
                 local attr = LocalPlayer:GetAttribute(name)
                 if attr ~= nil then 
                     result = tostring(attr)
-                    return -- Langsung stop pcall kalau ketemu
+                    return
+                end
+                
+                -- 2. Cari di Folder secara spesifik (CUMA ambil angka, tolak item/tool)
+                local hiddenFolders = {"leaderstats", "Data", "Stats", "Currencies", "Total"}
+                for _, folderName in ipairs(hiddenFolders) do
+                    local folder = LocalPlayer:FindFirstChild(folderName)
+                    if folder then
+                        local stat = folder:FindFirstChild(name)
+                        if stat and (stat:IsA("IntValue") or stat:IsA("NumberValue") or stat:IsA("StringValue")) then
+                            result = tostring(stat.Value)
+                            return
+                        end
+                    end
                 end
             end
         end)
         return result
     end
 
-    local lvl = getStat("Level", {"Lvl", "Rank"})
-    -- FIX: Memprioritaskan TotalExp sebelum Exp biasa biar gak kereset pas naik level
-    local exp = getStat("TotalExp", {"TotalExperience", "TotalEXP", "Total Exp", "EXP", "Exp", "Experience"})
-    local gears = getStat("Gears", {"Gear", "Silver", "Koin"})
-    local screw = getStat("Screws", {"Screw", "Baut", "Parts"})
-    local sin = getStat("Sin", {"Sins", "TotalSin"}) 
-    if sin == "Tidak Detek" then sin = "Hidden (Stat Matchmaking)" end
+    local lvl = getStat({"Level", "Lvl", "Rank"})
+    -- HANYA mencari Total EXP, menghapus kemungkinan ngambil Current Exp
+    local exp = getStat({"TotalExp", "TotalExperience", "TotalEXP", "Total Exp"}) 
+    local gears = getStat({"Gears", "Gear", "Silver", "Koin"})
+    local screw = getStat({"Screws", "Screw", "Baut", "Parts"})
+    local sin = getStat({"Sin", "Sins", "TotalSin"}) 
+    if sin == "Tidak Detek" then sin = "Hidden" end
 
     local embedData = {
         ["title"] = isTest and "🔧 TEST WEBHOOK" or "📊 Statistik Auto Farm",
@@ -115,7 +110,7 @@ local function SendWebhook(webhookUrl, isTest)
         ["fields"] = {
             {["name"] = "👤 Username", ["value"] = LocalPlayer.Name, ["inline"] = false},
             {["name"] = "📊 Level", ["value"] = lvl, ["inline"] = true},
-            {["name"] = "⭐ Total / Current EXP", ["value"] = exp, ["inline"] = true},
+            {["name"] = "⭐ Total EXP", ["value"] = exp, ["inline"] = true},
             {["name"] = "⚙️ Gears", ["value"] = gears, ["inline"] = true},
             {["name"] = "🔩 Screws", ["value"] = screw, ["inline"] = true},
             {["name"] = "💀 Total Sin", ["value"] = sin, ["inline"] = false}
