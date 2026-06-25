@@ -5,6 +5,7 @@ if getgenv().KemantapanBot_Active then
 end
 getgenv().KemantapanBot_Active = true
 
+-- ==================== SERVICES & VARIABLES ====================
 local CoreGui = game:GetService("CoreGui") or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
@@ -22,7 +23,9 @@ local isMobile = UserInputService.TouchEnabled
 local lastGeneratorPoint = nil 
 
 local function SendNotification(title, text, duration)
-    pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = duration or 3, Icon = "rbxassetid://10873923769" }) end)
+    pcall(function() 
+        StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = duration or 3, Icon = "rbxassetid://10873923769" }) 
+    end)
 end
 
 -- ==================== CONFIG SYSTEM ====================
@@ -36,6 +39,7 @@ local function LoadConfig() pcall(function() if isfile and isfile(ConfigFileName
 local function ResetConfig() pcall(function() if isfile and isfile(ConfigFileName) then delfile(ConfigFileName) end; Config = {} end) end
 LoadConfig()
 
+-- Inisialisasi Config Default
 if Config["Auto Skill Check [LEGIT]"] == nil then Config["Auto Skill Check [LEGIT]"] = false end
 if Config["Auto Gen (Fire Instan)"] == nil then Config["Auto Gen (Fire Instan)"] = false end
 if Config["Auto Gen (Metata)"] == nil then Config["Auto Gen (Metata)"] = false end
@@ -44,22 +48,43 @@ if Config["Webhook Auto Farm"] == nil then Config["Webhook Auto Farm"] = false e
 
 if CoreGui:FindFirstChild("KemantapanUI") then CoreGui.KemantapanUI:Destroy() end
 
--- ==================== WEBHOOK SENDER SYSTEM ====================
+-- ==================== WEBHOOK SENDER SYSTEM (SMART SCANNER) ====================
 local function SendWebhook(webhookUrl, isTest)
     if not webhookUrl or webhookUrl == "" or webhookUrl == "URL_DISINI" then return end
     local requestFunc = syn and syn.request or http_request or request or (fluxus and fluxus.request)
     if not requestFunc then SendNotification("Error", "Executor tidak support Webhook.", 3); return end
 
+    -- Smart Scanner: Deteksi data spesifik dari foto secara akurat
     local function getStat(statName, altNames)
         local namesToCheck = {statName}
         if altNames then for _, v in ipairs(altNames) do table.insert(namesToCheck, v) end end
         
+        -- 1. Cek Attributes (Biasanya Violent District nyimpen data disini)
         for _, name in ipairs(namesToCheck) do
-            local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-            if leaderstats and leaderstats:FindFirstChild(name) then return tostring(leaderstats[name].Value) end
             local attr = LocalPlayer:GetAttribute(name)
-            if attr then return tostring(attr) end
+            if attr ~= nil then return tostring(attr) end
         end
+        
+        -- 2. Cek Leaderstats
+        local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+        if leaderstats then
+            for _, name in ipairs(namesToCheck) do
+                if leaderstats:FindFirstChild(name) then return tostring(leaderstats[name].Value) end
+            end
+        end
+
+        -- 3. Mode Mata Elang: Cari kemiripan nama di Attributes (Case-Insensitive)
+        for attrName, attrValue in pairs(LocalPlayer:GetAttributes()) do
+            if attrName:lower():find(statName:lower()) then return tostring(attrValue) end
+        end
+
+        -- 4. Mode Mata Elang: Cari kemiripan nama di Leaderstats (Case-Insensitive)
+        if leaderstats then
+            for _, child in ipairs(leaderstats:GetChildren()) do
+                if child.Name:lower():find(statName:lower()) then return tostring(child.Value) end
+            end
+        end
+
         return "N/A"
     end
 
@@ -67,21 +92,22 @@ local function SendWebhook(webhookUrl, isTest)
     local exp = getStat("EXP", {"Exp", "Experience"})
     local gears = getStat("Gears", {"Gear"})
     local screw = getStat("Screws", {"Screw", "Baut"})
-    local sin = getStat("Sin", {"Sins", "TotalSin", "Merah", "Tengkorak"})
+    -- Target sin diperluas sesuai nama spesifik di dalam game
+    local sin = getStat("Sin", {"Sins", "TotalSin", "Merah", "Tengkorak", "Points", "Tokens", "Total Sins"}) 
 
     local embedData = {
         ["title"] = isTest and "🔧 TEST WEBHOOK" or "📊 Statistik Auto Farm",
-        ["description"] = "Auto Farm!",
+        ["description"] = "Kemantapan Auto Farm System",
         ["color"] = 65280, 
         ["fields"] = {
             {["name"] = "👤 Username", ["value"] = LocalPlayer.Name, ["inline"] = false},
-            {["name"] = "📊 Level", ["value"] = lvl, ["inline"] = false},
-            {["name"] = "⭐ EXP", ["value"] = exp, ["inline"] = false},
-            {["name"] = "⚙️ Gears", ["value"] = gears, ["inline"] = false},
-            {["name"] = "🔩 Screws", ["value"] = screw, ["inline"] = false},
+            {["name"] = "📊 Level", ["value"] = lvl, ["inline"] = true},
+            {["name"] = "⭐ EXP", ["value"] = exp, ["inline"] = true},
+            {["name"] = "⚙️ Gears", ["value"] = gears, ["inline"] = true},
+            {["name"] = "🔩 Screws", ["value"] = screw, ["inline"] = true},
             {["name"] = "💀 Total Sin", ["value"] = sin, ["inline"] = false}
         },
-        ["footer"] = {["text"] = "Kemantapan Hub Script"}
+        ["footer"] = {["text"] = "Kemantapan Hub Script | Violent District"}
     }
 
     local payload = HttpService:JSONEncode({content = "", embeds = {embedData}})
@@ -99,8 +125,10 @@ if hookmetamethod then
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
         local args = {...}
+        
         if isRunning() and method == "FireServer" then
             local remoteName = tostring(self)
+            
             if remoteName == "SkillCheckResultEvent" then
                 if Config["Auto Gen (Metata)"] or Config["Auto Gen (Fire Instan)"] or Config["Auto Skill Check [LEGIT]"] then
                     args[1], args[2] = "success", 1
@@ -189,6 +217,7 @@ local function RefreshMapObjects()
     end)
     MapObjects = temp
 end
+
 task.spawn(RefreshMapObjects)
 task.spawn(function() while isRunning() do task.wait(10); RefreshMapObjects() end end)
 
@@ -211,7 +240,7 @@ local function GetGenProgress(gen)
     return highest
 end
 
--- ==================== UI & SERVER HOP SETUP (WITH AUTO-RETRY) ====================
+-- ==================== UI & SERVER HOP SETUP ====================
 local isHopping = false
 
 TeleportService.TeleportInitFailed:Connect(function()
@@ -237,12 +266,16 @@ local function FetchAndHop(mode)
                     end
                 end
                 if #candidates > 0 then
-                    if mode == "Small" then table.sort(candidates, function(a, b) return a.playing < b.playing end) else
-                        for i = #candidates, 2, -1 do local j = math.random(i); candidates[i], candidates[j] = candidates[j], candidates[i] end
+                    if mode == "Small" then 
+                        table.sort(candidates, function(a, b) return a.playing < b.playing end) 
+                    else
+                        for i = #candidates, 2, -1 do 
+                            local j = math.random(i)
+                            candidates[i], candidates[j] = candidates[j], candidates[i] 
+                        end
                     end
                     SendNotification("Hopping", "Menyambung ke Server...", 3)
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[1].id, LocalPlayer)
-                    
                     task.wait(4)
                     isHopping = false 
                     return
@@ -253,34 +286,112 @@ local function FetchAndHop(mode)
     end)
 end
 
+-- ==================== GUI CREATION ====================
 local ScreenGui = Instance.new("ScreenGui", CoreGui)
-ScreenGui.Name = "KemantapanUI"; ScreenGui.ResetOnSpawn = false
+ScreenGui.Name = "KemantapanUI"
+ScreenGui.ResetOnSpawn = false
 
 local ToggleR = Instance.new("TextButton", ScreenGui)
-ToggleR.Size = UDim2.new(0, 40, 0, 40); ToggleR.Position = UDim2.new(0.85, 0, 0.1, 0)
-ToggleR.BackgroundColor3 = Color3.fromRGB(255, 215, 0); ToggleR.TextColor3 = Color3.fromRGB(15, 15, 15)
-ToggleR.Font = Enum.Font.GothamBold; ToggleR.TextSize = 18; ToggleR.Text = "R"; ToggleR.Active = true; ToggleR.Draggable = true
+ToggleR.Size = UDim2.new(0, 40, 0, 40)
+ToggleR.Position = UDim2.new(0.85, 0, 0.1, 0)
+ToggleR.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+ToggleR.TextColor3 = Color3.fromRGB(15, 15, 15)
+ToggleR.Font = Enum.Font.GothamBold
+ToggleR.TextSize = 18
+ToggleR.Text = "R"
+ToggleR.Active = true
+ToggleR.Draggable = true
 Instance.new("UICorner", ToggleR).CornerRadius = UDim.new(1, 0)
 
 local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 470, 0, 320); Main.Position = UDim2.new(0.5, -235, 0.5, -160)
-Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15); Main.BorderColor3 = Color3.fromRGB(255, 215, 0); Main.BorderSizePixel = 2; Main.Active = true; Main.Draggable = true
+Main.Size = UDim2.new(0, 470, 0, 320)
+Main.Position = UDim2.new(0.5, -235, 0.5, -160)
+Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Main.BorderColor3 = Color3.fromRGB(255, 215, 0)
+Main.BorderSizePixel = 2
+Main.Active = true
+Main.Draggable = true
 
-local ConfirmOverlay = Instance.new("Frame", Main); ConfirmOverlay.Size = UDim2.new(1, 0, 1, 0); ConfirmOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0); ConfirmOverlay.BackgroundTransparency = 0.2; ConfirmOverlay.ZIndex = 10; ConfirmOverlay.Visible = false
-local ConfirmBox = Instance.new("Frame", ConfirmOverlay); ConfirmBox.Size = UDim2.new(0, 250, 0, 120); ConfirmBox.Position = UDim2.new(0.5, -125, 0.5, -60); ConfirmBox.BackgroundColor3 = Color3.fromRGB(25, 25, 25); ConfirmBox.ZIndex = 11; Instance.new("UICorner", ConfirmBox).CornerRadius = UDim.new(0, 8)
-local ConfirmTxt = Instance.new("TextLabel", ConfirmBox); ConfirmTxt.Size = UDim2.new(1, 0, 0, 60); ConfirmTxt.BackgroundTransparency = 1; ConfirmTxt.Text = "Yakin ingin Reset Config?"; ConfirmTxt.TextColor3 = Color3.fromRGB(255, 255, 255); ConfirmTxt.Font = Enum.Font.GothamBold; ConfirmTxt.TextSize = 13; ConfirmTxt.ZIndex = 12
-local BtnYes = Instance.new("TextButton", ConfirmBox); BtnYes.Size = UDim2.new(0, 80, 0, 30); BtnYes.Position = UDim2.new(0.15, 0, 0.6, 0); BtnYes.BackgroundColor3 = Color3.fromRGB(200, 50, 50); BtnYes.Text = "YES"; BtnYes.TextColor3 = Color3.fromRGB(255, 255, 255); BtnYes.Font = Enum.Font.GothamBold; BtnYes.ZIndex = 12; Instance.new("UICorner", BtnYes).CornerRadius = UDim.new(0, 4)
-local BtnNo = Instance.new("TextButton", ConfirmBox); BtnNo.Size = UDim2.new(0, 80, 0, 30); BtnNo.Position = UDim2.new(0.55, 0, 0.6, 0); BtnNo.BackgroundColor3 = Color3.fromRGB(50, 200, 50); BtnNo.Text = "NO"; BtnNo.TextColor3 = Color3.fromRGB(255, 255, 255); BtnNo.Font = Enum.Font.GothamBold; BtnNo.ZIndex = 12; Instance.new("UICorner", BtnNo).CornerRadius = UDim.new(0, 4)
+local ConfirmOverlay = Instance.new("Frame", Main)
+ConfirmOverlay.Size = UDim2.new(1, 0, 1, 0)
+ConfirmOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ConfirmOverlay.BackgroundTransparency = 0.2
+ConfirmOverlay.ZIndex = 10
+ConfirmOverlay.Visible = false
+
+local ConfirmBox = Instance.new("Frame", ConfirmOverlay)
+ConfirmBox.Size = UDim2.new(0, 250, 0, 120)
+ConfirmBox.Position = UDim2.new(0.5, -125, 0.5, -60)
+ConfirmBox.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+ConfirmBox.ZIndex = 11
+Instance.new("UICorner", ConfirmBox).CornerRadius = UDim.new(0, 8)
+
+local ConfirmTxt = Instance.new("TextLabel", ConfirmBox)
+ConfirmTxt.Size = UDim2.new(1, 0, 0, 60)
+ConfirmTxt.BackgroundTransparency = 1
+ConfirmTxt.Text = "Yakin ingin Reset Config?"
+ConfirmTxt.TextColor3 = Color3.fromRGB(255, 255, 255)
+ConfirmTxt.Font = Enum.Font.GothamBold
+ConfirmTxt.TextSize = 13
+ConfirmTxt.ZIndex = 12
+
+local BtnYes = Instance.new("TextButton", ConfirmBox)
+BtnYes.Size = UDim2.new(0, 80, 0, 30)
+BtnYes.Position = UDim2.new(0.15, 0, 0.6, 0)
+BtnYes.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+BtnYes.Text = "YES"
+BtnYes.TextColor3 = Color3.fromRGB(255, 255, 255)
+BtnYes.Font = Enum.Font.GothamBold
+BtnYes.ZIndex = 12
+Instance.new("UICorner", BtnYes).CornerRadius = UDim.new(0, 4)
+
+local BtnNo = Instance.new("TextButton", ConfirmBox)
+BtnNo.Size = UDim2.new(0, 80, 0, 30)
+BtnNo.Position = UDim2.new(0.55, 0, 0.6, 0)
+BtnNo.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+BtnNo.Text = "NO"
+BtnNo.TextColor3 = Color3.fromRGB(255, 255, 255)
+BtnNo.Font = Enum.Font.GothamBold
+BtnNo.ZIndex = 12
+Instance.new("UICorner", BtnNo).CornerRadius = UDim.new(0, 4)
 
 BtnNo.MouseButton1Click:Connect(function() ConfirmOverlay.Visible = false end)
 BtnYes.MouseButton1Click:Connect(function() ResetConfig(); ConfirmOverlay.Visible = false; getgenv().KemantapanBot_Active = false; ScreenGui:Destroy() end)
 
-local TitleBar = Instance.new("Frame", Main); TitleBar.Size = UDim2.new(1, 0, 0, 30); TitleBar.BackgroundColor3 = Color3.fromRGB(255, 215, 0); TitleBar.BorderSizePixel = 0
-local TitleText = Instance.new("TextLabel", TitleBar); TitleText.Size = UDim2.new(1, -40, 1, 0); TitleText.Position = UDim2.new(0, 10, 0, 0); TitleText.BackgroundTransparency = 1; TitleText.Text = "Kemantapan Hub | V30 (Auto Farm & Webhook)"; TitleText.TextColor3 = Color3.fromRGB(15, 15, 15); TitleText.Font = Enum.Font.GothamBold; TitleText.TextSize = 12; TitleText.TextXAlignment = Enum.TextXAlignment.Left
-local CloseBtn = Instance.new("TextButton", TitleBar); CloseBtn.Size = UDim2.new(0, 30, 1, 0); CloseBtn.Position = UDim2.new(1, -30, 0, 0); CloseBtn.BackgroundTransparency = 1; CloseBtn.Text = "X"; CloseBtn.TextColor3 = Color3.fromRGB(255, 50, 50); CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 16
+local TitleBar = Instance.new("Frame", Main)
+TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+TitleBar.BorderSizePixel = 0
 
-local Sidebar = Instance.new("Frame", Main); Sidebar.Size = UDim2.new(0, 120, 1, -30); Sidebar.Position = UDim2.new(0, 0, 0, 30); Sidebar.BackgroundColor3 = Color3.fromRGB(20, 20, 20); Sidebar.BorderSizePixel = 0
-local ContentArea = Instance.new("Frame", Main); ContentArea.Size = UDim2.new(1, -120, 1, -30); ContentArea.Position = UDim2.new(0, 120, 0, 30); ContentArea.BackgroundTransparency = 1
+local TitleText = Instance.new("TextLabel", TitleBar)
+TitleText.Size = UDim2.new(1, -40, 1, 0)
+TitleText.Position = UDim2.new(0, 10, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "Kemantapan Hub | V30 (Auto Farm & Webhook)"
+TitleText.TextColor3 = Color3.fromRGB(15, 15, 15)
+TitleText.Font = Enum.Font.GothamBold
+TitleText.TextSize = 12
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton", TitleBar)
+CloseBtn.Size = UDim2.new(0, 30, 1, 0)
+CloseBtn.Position = UDim2.new(1, -30, 0, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 16
+
+local Sidebar = Instance.new("Frame", Main)
+Sidebar.Size = UDim2.new(0, 120, 1, -30)
+Sidebar.Position = UDim2.new(0, 0, 0, 30)
+Sidebar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Sidebar.BorderSizePixel = 0
+
+local ContentArea = Instance.new("Frame", Main)
+ContentArea.Size = UDim2.new(1, -120, 1, -30)
+ContentArea.Position = UDim2.new(0, 120, 0, 30)
+ContentArea.BackgroundTransparency = 1
 
 ToggleR.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
 CloseBtn.MouseButton1Click:Connect(function() getgenv().KemantapanBot_Active = false; ScreenGui:Destroy() end)
@@ -288,83 +399,226 @@ CloseBtn.MouseButton1Click:Connect(function() getgenv().KemantapanBot_Active = f
 local Tabs = {}
 local function CreateTab(name, yPos)
     local Btn = Instance.new("TextButton", Sidebar)
-    Btn.Size = UDim2.new(1, 0, 0, 35); Btn.Position = UDim2.new(0, 0, 0, yPos); Btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20); Btn.Text = name; Btn.TextColor3 = Color3.fromRGB(180, 180, 180); Btn.Font = Enum.Font.GothamSemibold; Btn.TextSize = 12; Btn.BorderSizePixel = 0
+    Btn.Size = UDim2.new(1, 0, 0, 35)
+    Btn.Position = UDim2.new(0, 0, 0, yPos)
+    Btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    Btn.Text = name
+    Btn.TextColor3 = Color3.fromRGB(180, 180, 180)
+    Btn.Font = Enum.Font.GothamSemibold
+    Btn.TextSize = 12
+    Btn.BorderSizePixel = 0
+    
     local Page = Instance.new("ScrollingFrame", ContentArea)
-    Page.Size = UDim2.new(1, 0, 1, 0); Page.BackgroundTransparency = 1; Page.ScrollBarThickness = 4; Page.Visible = false; Page.CanvasSize = UDim2.new(0, 0, 0, 0); Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    local Layout = Instance.new("UIListLayout", Page); Layout.SortOrder = Enum.SortOrder.LayoutOrder; Layout.Padding = UDim.new(0, 5)
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.BackgroundTransparency = 1
+    Page.ScrollBarThickness = 4
+    Page.Visible = false
+    Page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    
+    local Layout = Instance.new("UIListLayout", Page)
+    Layout.SortOrder = Enum.SortOrder.LayoutOrder
+    Layout.Padding = UDim.new(0, 5)
+    
     table.insert(Tabs, {Btn = Btn, Page = Page, Layout = Layout})
-    Btn.MouseButton1Click:Connect(function() for _, t in pairs(Tabs) do t.Btn.TextColor3 = Color3.fromRGB(180, 180, 180); t.Page.Visible = false end; Btn.TextColor3 = Color3.fromRGB(255, 215, 0); Page.Visible = true end)
+    
+    Btn.MouseButton1Click:Connect(function() 
+        for _, t in pairs(Tabs) do 
+            t.Btn.TextColor3 = Color3.fromRGB(180, 180, 180)
+            t.Page.Visible = false 
+        end
+        Btn.TextColor3 = Color3.fromRGB(255, 215, 0)
+        Page.Visible = true 
+    end)
     return Page
 end
 
+-- ==================== UI COMPONENT BUILDERS ====================
 local function CreateToggle(parent, title, callback)
-    local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -10, 0, 30); Container.BackgroundTransparency = 1
-    local Lbl = Instance.new("TextLabel", Container); Lbl.Size = UDim2.new(0.65, 0, 1, 0); Lbl.BackgroundTransparency = 1; Lbl.Text = "  " .. title; Lbl.TextColor3 = Color3.fromRGB(220, 220, 220); Lbl.Font = Enum.Font.Gotham; Lbl.TextSize = 11; Lbl.TextXAlignment = Enum.TextXAlignment.Left
-    local Btn = Instance.new("TextButton", Container); Btn.Size = UDim2.new(0, 70, 0, 22); Btn.Position = UDim2.new(1, -80, 0.5, -11); Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35); Btn.Text = "OFF"; Btn.TextColor3 = Color3.fromRGB(255, 100, 100); Btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    local Container = Instance.new("Frame", parent)
+    Container.Size = UDim2.new(1, -10, 0, 30)
+    Container.BackgroundTransparency = 1
+    
+    local Lbl = Instance.new("TextLabel", Container)
+    Lbl.Size = UDim2.new(0.65, 0, 1, 0)
+    Lbl.BackgroundTransparency = 1
+    Lbl.Text = "  " .. title
+    Lbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Lbl.Font = Enum.Font.Gotham
+    Lbl.TextSize = 11
+    Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local Btn = Instance.new("TextButton", Container)
+    Btn.Size = UDim2.new(0, 70, 0, 22)
+    Btn.Position = UDim2.new(1, -80, 0.5, -11)
+    Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Btn.Text = "OFF"
+    Btn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    Btn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    
     if Config[title] == nil then Config[title] = false end
+    
     local function setToggleState(state, skipCallback)
-        Config[title] = state; Btn.Text = state and "ON" or "OFF"; Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35); Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
+        Config[title] = state
+        Btn.Text = state and "ON" or "OFF"
+        Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35)
+        Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
         if callback and not skipCallback then pcall(function() callback(state) end) end
     end
+    
     ToggleFunctions[title] = setToggleState
     Btn.MouseButton1Click:Connect(function() setToggleState(not Config[title]) end)
     if Config[title] == true then task.spawn(function() setToggleState(true) end) end
 end
 
 local function CreateInputToggle(parent, title, defaultInput, callback)
-    local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -10, 0, 30); Container.BackgroundTransparency = 1
-    local Lbl = Instance.new("TextLabel", Container); Lbl.Size = UDim2.new(0.4, 0, 1, 0); Lbl.BackgroundTransparency = 1; Lbl.Text = "  " .. title; Lbl.TextColor3 = Color3.fromRGB(220, 220, 220); Lbl.Font = Enum.Font.Gotham; Lbl.TextSize = 11; Lbl.TextXAlignment = Enum.TextXAlignment.Left
-    local InputBox = Instance.new("TextBox", Container); InputBox.Size = UDim2.new(0, 40, 0, 22); InputBox.Position = UDim2.new(0.45, 0, 0.5, -11); InputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30); InputBox.TextColor3 = Color3.fromRGB(255, 255, 255); InputBox.Text = tostring(Config[title .. " Value"] or defaultInput); InputBox.Font = Enum.Font.Gotham; InputBox.TextSize = 11; Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 4)
-    local Btn = Instance.new("TextButton", Container); Btn.Size = UDim2.new(0, 70, 0, 22); Btn.Position = UDim2.new(1, -80, 0.5, -11); Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35); Btn.Text = "OFF"; Btn.TextColor3 = Color3.fromRGB(255, 100, 100); Btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    local Container = Instance.new("Frame", parent)
+    Container.Size = UDim2.new(1, -10, 0, 30)
+    Container.BackgroundTransparency = 1
+    
+    local Lbl = Instance.new("TextLabel", Container)
+    Lbl.Size = UDim2.new(0.4, 0, 1, 0)
+    Lbl.BackgroundTransparency = 1
+    Lbl.Text = "  " .. title
+    Lbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Lbl.Font = Enum.Font.Gotham
+    Lbl.TextSize = 11
+    Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local InputBox = Instance.new("TextBox", Container)
+    InputBox.Size = UDim2.new(0, 40, 0, 22)
+    InputBox.Position = UDim2.new(0.45, 0, 0.5, -11)
+    InputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    InputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    InputBox.Text = tostring(Config[title .. " Value"] or defaultInput)
+    InputBox.Font = Enum.Font.Gotham
+    InputBox.TextSize = 11
+    Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 4)
+    
+    local Btn = Instance.new("TextButton", Container)
+    Btn.Size = UDim2.new(0, 70, 0, 22)
+    Btn.Position = UDim2.new(1, -80, 0.5, -11)
+    Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Btn.Text = "OFF"
+    Btn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    Btn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    
     if Config[title] == nil then Config[title] = false end
+    
     local function setInputToggleState(state, val)
-        Config[title] = state; Config[title .. " Value"] = val; Btn.Text = state and "ON" or "OFF"; Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35); Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
+        Config[title] = state
+        Config[title .. " Value"] = val
+        Btn.Text = state and "ON" or "OFF"
+        Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35)
+        Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
         if callback then pcall(function() callback(state, val) end) end
     end
+    
     Btn.MouseButton1Click:Connect(function() setInputToggleState(not Config[title], tonumber(InputBox.Text) or defaultInput) end)
     InputBox:GetPropertyChangedSignal("Text"):Connect(function()
         local val = tonumber(InputBox.Text)
-        if val then Config[title .. " Value"] = val; if Config[title] and callback then pcall(function() callback(true, val) end) end end
+        if val then 
+            Config[title .. " Value"] = val
+            if Config[title] and callback then pcall(function() callback(true, val) end) end 
+        end
     end)
     if Config[title] == true then task.spawn(function() setInputToggleState(true, tonumber(InputBox.Text) or defaultInput) end) end
 end
 
 local function CreateStringInputToggle(parent, title, defaultInput, callback)
-    local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -10, 0, 30); Container.BackgroundTransparency = 1
-    local Lbl = Instance.new("TextLabel", Container); Lbl.Size = UDim2.new(0.35, 0, 1, 0); Lbl.BackgroundTransparency = 1; Lbl.Text = "  " .. title; Lbl.TextColor3 = Color3.fromRGB(220, 220, 220); Lbl.Font = Enum.Font.Gotham; Lbl.TextSize = 11; Lbl.TextXAlignment = Enum.TextXAlignment.Left
-    local InputBox = Instance.new("TextBox", Container); InputBox.Size = UDim2.new(0, 60, 0, 22); InputBox.Position = UDim2.new(0.40, 0, 0.5, -11); InputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30); InputBox.TextColor3 = Color3.fromRGB(255, 255, 255); InputBox.Text = tostring(Config[title .. " Value"] or defaultInput); InputBox.Font = Enum.Font.Gotham; InputBox.TextSize = 10; InputBox.TextScaled = true; Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 4)
-    local Btn = Instance.new("TextButton", Container); Btn.Size = UDim2.new(0, 70, 0, 22); Btn.Position = UDim2.new(1, -80, 0.5, -11); Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35); Btn.Text = "OFF"; Btn.TextColor3 = Color3.fromRGB(255, 100, 100); Btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    local Container = Instance.new("Frame", parent)
+    Container.Size = UDim2.new(1, -10, 0, 30)
+    Container.BackgroundTransparency = 1
+    
+    local Lbl = Instance.new("TextLabel", Container)
+    Lbl.Size = UDim2.new(0.35, 0, 1, 0)
+    Lbl.BackgroundTransparency = 1
+    Lbl.Text = "  " .. title
+    Lbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Lbl.Font = Enum.Font.Gotham
+    Lbl.TextSize = 11
+    Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local InputBox = Instance.new("TextBox", Container)
+    InputBox.Size = UDim2.new(0, 60, 0, 22)
+    InputBox.Position = UDim2.new(0.40, 0, 0.5, -11)
+    InputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    InputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    InputBox.Text = tostring(Config[title .. " Value"] or defaultInput)
+    InputBox.Font = Enum.Font.Gotham
+    InputBox.TextSize = 10
+    InputBox.TextScaled = true
+    Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 4)
+    
+    local Btn = Instance.new("TextButton", Container)
+    Btn.Size = UDim2.new(0, 70, 0, 22)
+    Btn.Position = UDim2.new(1, -80, 0.5, -11)
+    Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Btn.Text = "OFF"
+    Btn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    Btn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    
     if Config[title] == nil then Config[title] = false end
+    
     local function setInputToggleState(state, val)
-        Config[title] = state; Config[title .. " Value"] = val; Btn.Text = state and "ON" or "OFF"; Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35); Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
+        Config[title] = state
+        Config[title .. " Value"] = val
+        Btn.Text = state and "ON" or "OFF"
+        Btn.BackgroundColor3 = state and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(35, 35, 35)
+        Btn.TextColor3 = state and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(255, 100, 100)
         if callback then pcall(function() callback(state, val) end) end
     end
+    
     Btn.MouseButton1Click:Connect(function() setInputToggleState(not Config[title], InputBox.Text) end)
     InputBox:GetPropertyChangedSignal("Text"):Connect(function()
-        Config[title .. " Value"] = InputBox.Text; if Config[title] and callback then pcall(function() callback(true, InputBox.Text) end) end
+        Config[title .. " Value"] = InputBox.Text
+        if Config[title] and callback then pcall(function() callback(true, InputBox.Text) end) end
     end)
     if Config[title] == true then task.spawn(function() setInputToggleState(true, InputBox.Text) end) end
 end
 
 local function CreateScriptButton(parent, title, callback, color)
-    local Btn = Instance.new("TextButton", parent); Btn.Size = UDim2.new(1, -14, 0, 30); Btn.BackgroundColor3 = color or Color3.fromRGB(35, 35, 35); Btn.TextColor3 = Color3.fromRGB(255, 255, 255); Btn.Text = title; Btn.Font = Enum.Font.GothamBold; Btn.TextSize = 12; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 5)
-    local UIPadding = Instance.new("UIPadding", Btn); UIPadding.PaddingLeft = UDim.new(0, 10)
+    local Btn = Instance.new("TextButton", parent)
+    Btn.Size = UDim2.new(1, -14, 0, 30)
+    Btn.BackgroundColor3 = color or Color3.fromRGB(35, 35, 35)
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.Text = title
+    Btn.Font = Enum.Font.GothamBold
+    Btn.TextSize = 12
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 5)
+    
+    local UIPadding = Instance.new("UIPadding", Btn)
+    UIPadding.PaddingLeft = UDim.new(0, 10)
     Btn.MouseButton1Click:Connect(function() pcall(callback) end)
 end
 
+-- ==================== TAB INITIALIZATION ====================
 local TabInfo = CreateTab("Informasi", 0)
 local TabSurv = CreateTab("Survivor", 35)
 local TabESP  = CreateTab("ESP Menu", 70)
 local TabTele = CreateTab("Teleport", 105) 
 local TabSet  = CreateTab("Pengaturan", 140)
 
-Tabs[1].Page.Visible = true; Tabs[1].Btn.TextColor3 = Color3.fromRGB(255, 215, 0)
-local InfoTxt = Instance.new("TextLabel", TabInfo); InfoTxt.Size = UDim2.new(1, 0, 0, 70); InfoTxt.BackgroundTransparency = 1; InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: WEBHOOK INTEGRATED & AUTO FARM READY!"; InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255); InfoTxt.Font = Enum.Font.Gotham; InfoTxt.TextSize = 12; InfoTxt.TextXAlignment = Enum.TextXAlignment.Left
+Tabs[1].Page.Visible = true
+Tabs[1].Btn.TextColor3 = Color3.fromRGB(255, 215, 0)
+
+local InfoTxt = Instance.new("TextLabel", TabInfo)
+InfoTxt.Size = UDim2.new(1, 0, 0, 70)
+InfoTxt.BackgroundTransparency = 1
+InfoTxt.Text = "  Player: " .. LocalPlayer.Name .. "\n  Game: Violent District\n  Status: WEBHOOK INTEGRATED & AUTO FARM READY!"
+InfoTxt.TextColor3 = Color3.fromRGB(255, 255, 255)
+InfoTxt.Font = Enum.Font.Gotham
+InfoTxt.TextSize = 12
+InfoTxt.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ==================== SURVIVOR MENU CONFIG ====================
 CreateScriptButton(TabSurv, "🏆 1-Klik Win Survivor (Instan Escape)", function()
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
+    
     if MapObjects.Finishlines and #MapObjects.Finishlines > 0 then
         hrp.CFrame = CFrame.new(MapObjects.Finishlines[1].Position + Vector3.new(0, 1, 0))
         hrp.Velocity = Vector3.new(0,0,0)
@@ -375,8 +629,11 @@ CreateScriptButton(TabSurv, "🏆 1-Klik Win Survivor (Instan Escape)", function
         if map then
             for _, v in ipairs(map:GetDescendants()) do
                 if v:IsA("BasePart") and (v.Name:lower() == "fininshline" or v.Name:lower() == "finishline") then
-                    hrp.CFrame = CFrame.new(v.Position + Vector3.new(0, 1, 0)); hrp.Velocity = Vector3.new(0,0,0)
-                    SendNotification("WIN!", "TP Finishline Berhasil!", 3); found = true; break
+                    hrp.CFrame = CFrame.new(v.Position + Vector3.new(0, 1, 0))
+                    hrp.Velocity = Vector3.new(0,0,0)
+                    SendNotification("WIN!", "TP Finishline Berhasil!", 3)
+                    found = true
+                    break
                 end
             end
         end
@@ -386,6 +643,7 @@ end, Color3.fromRGB(40, 160, 40))
 
 CreateToggle(TabSurv, "Auto Farm Survivor (Auto Win)")
 CreateStringInputToggle(TabSurv, "Webhook Auto Farm", "URL_DISINI", function(state, value) Config["Webhook Auto Farm Value"] = value end)
+
 CreateScriptButton(TabSurv, "📡 Test Webhook Status", function()
     if Config["Webhook Auto Farm"] and Config["Webhook Auto Farm Value"] and Config["Webhook Auto Farm Value"] ~= "URL_DISINI" then
         SendWebhook(Config["Webhook Auto Farm Value"], true)
@@ -404,14 +662,24 @@ CreateInputToggle(TabSurv, "WalkSpeed", 20, function(state, value) Config["WalkS
 
 -- ==================== ESP MENU CONFIG ====================
 CreateToggle(TabESP, "Set Waktu Siang (12 PM)", function(state) if state then Lighting.ClockTime = 12 end end)
-Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function() if Config["Set Waktu Siang (12 PM)"] and Lighting.ClockTime ~= 12 then Lighting.ClockTime = 12 end end)
+Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function() 
+    if Config["Set Waktu Siang (12 PM)"] and Lighting.ClockTime ~= 12 then Lighting.ClockTime = 12 end 
+end)
 
 CreateToggle(TabESP, "World Visual (No Fog/Shadow)", function(state)
     Lighting.GlobalShadows = not state
-    for _, v in ipairs(Lighting:GetDescendants()) do if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("Sky") then v.Enabled = not state end end
+    for _, v in ipairs(Lighting:GetDescendants()) do 
+        if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("Sky") then v.Enabled = not state end 
+    end
 end)
+
 CreateInputToggle(TabESP, "Custom Brightness", 3, function(state, value) Lighting.Brightness = state and value or 1 end)
-Lighting:GetPropertyChangedSignal("Brightness"):Connect(function() if Config["Custom Brightness"] then local val = tonumber(Config["Custom Brightness Value"]) or 3; if Lighting.Brightness ~= val then Lighting.Brightness = val end end end)
+Lighting:GetPropertyChangedSignal("Brightness"):Connect(function() 
+    if Config["Custom Brightness"] then 
+        local val = tonumber(Config["Custom Brightness Value"]) or 3
+        if Lighting.Brightness ~= val then Lighting.Brightness = val end 
+    end 
+end)
 
 CreateToggle(TabESP, "ESP All-in-One", function(state)
     local espList = {"ESP Survivor", "ESP Killer", "ESP Generator", "ESP Pallet", "ESP Window", "ESP Gate", "Tampilkan Nama Player & Jarak"}
@@ -427,87 +695,198 @@ CreateToggle(TabESP, "ESP Gate")
 CreateToggle(TabESP, "Tampilkan Nama Player & Jarak")
 
 -- ==================== TELEPORT TAB ====================
-local TeleContainer = Instance.new("Frame", TabTele); TeleContainer.Size = UDim2.new(1, 0, 1, 0); TeleContainer.BackgroundTransparency = 1
-local BoxLeft = Instance.new("Frame", TeleContainer); BoxLeft.Size = UDim2.new(0.48, 0, 0.95, 0); BoxLeft.Position = UDim2.new(0, 5, 0, 5); BoxLeft.BackgroundColor3 = Color3.fromRGB(25, 25, 25); Instance.new("UICorner", BoxLeft).CornerRadius = UDim.new(0, 6)
-local LblLeft = Instance.new("TextLabel", BoxLeft); LblLeft.Size = UDim2.new(1, 0, 0, 20); LblLeft.BackgroundTransparency = 1; LblLeft.Text = "Teleport Pemain"; LblLeft.TextColor3 = Color3.fromRGB(255, 215, 0); LblLeft.Font = Enum.Font.GothamBold; LblLeft.TextSize = 12
-local PlayerScroll = Instance.new("ScrollingFrame", BoxLeft); PlayerScroll.Size = UDim2.new(1, -10, 1, -25); PlayerScroll.Position = UDim2.new(0, 5, 0, 25); PlayerScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20); PlayerScroll.BorderSizePixel = 0; PlayerScroll.ScrollBarThickness = 3; PlayerScroll.CanvasSize = UDim2.new(0,0,0,0); PlayerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-local PLayout = Instance.new("UIListLayout", PlayerScroll); PLayout.Padding = UDim.new(0, 4); PLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+local TeleContainer = Instance.new("Frame", TabTele)
+TeleContainer.Size = UDim2.new(1, 0, 1, 0)
+TeleContainer.BackgroundTransparency = 1
+
+local BoxLeft = Instance.new("Frame", TeleContainer)
+BoxLeft.Size = UDim2.new(0.48, 0, 0.95, 0)
+BoxLeft.Position = UDim2.new(0, 5, 0, 5)
+BoxLeft.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Instance.new("UICorner", BoxLeft).CornerRadius = UDim.new(0, 6)
+
+local LblLeft = Instance.new("TextLabel", BoxLeft)
+LblLeft.Size = UDim2.new(1, 0, 0, 20)
+LblLeft.BackgroundTransparency = 1
+LblLeft.Text = "Teleport Pemain"
+LblLeft.TextColor3 = Color3.fromRGB(255, 215, 0)
+LblLeft.Font = Enum.Font.GothamBold
+LblLeft.TextSize = 12
+
+local PlayerScroll = Instance.new("ScrollingFrame", BoxLeft)
+PlayerScroll.Size = UDim2.new(1, -10, 1, -25)
+PlayerScroll.Position = UDim2.new(0, 5, 0, 25)
+PlayerScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+PlayerScroll.BorderSizePixel = 0
+PlayerScroll.ScrollBarThickness = 3
+PlayerScroll.CanvasSize = UDim2.new(0,0,0,0)
+PlayerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+local PLayout = Instance.new("UIListLayout", PlayerScroll)
+PLayout.Padding = UDim.new(0, 4)
+PLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 local selectedPlayerToTP = nil
 
-local ActionFrame = Instance.new("Frame", PlayerScroll); ActionFrame.Size = UDim2.new(1, -4, 0, 85); ActionFrame.BackgroundTransparency = 1; ActionFrame.LayoutOrder = 9999
-local TargetLbl = Instance.new("TextLabel", ActionFrame); TargetLbl.Size = UDim2.new(1, 0, 0, 18); TargetLbl.BackgroundTransparency = 1; TargetLbl.Text = "Target: -"; TargetLbl.TextColor3 = Color3.fromRGB(255, 255, 255); TargetLbl.Font = Enum.Font.GothamSemibold; TargetLbl.TextSize = 11
-local BtnTPExec = Instance.new("TextButton", ActionFrame); BtnTPExec.Size = UDim2.new(1, 0, 0, 26); BtnTPExec.Position = UDim2.new(0, 0, 0, 20); BtnTPExec.BackgroundColor3 = Color3.fromRGB(40, 200, 40); BtnTPExec.Text = "TELEPORT"; BtnTPExec.TextColor3 = Color3.fromRGB(255, 255, 255); BtnTPExec.Font = Enum.Font.GothamBold; BtnTPExec.TextSize = 12; Instance.new("UICorner", BtnTPExec).CornerRadius = UDim.new(0, 4)
+local ActionFrame = Instance.new("Frame", PlayerScroll)
+ActionFrame.Size = UDim2.new(1, -4, 0, 85)
+ActionFrame.BackgroundTransparency = 1
+ActionFrame.LayoutOrder = 9999
+
+local TargetLbl = Instance.new("TextLabel", ActionFrame)
+TargetLbl.Size = UDim2.new(1, 0, 0, 18)
+TargetLbl.BackgroundTransparency = 1
+TargetLbl.Text = "Target: -"
+TargetLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+TargetLbl.Font = Enum.Font.GothamSemibold
+TargetLbl.TextSize = 11
+
+local BtnTPExec = Instance.new("TextButton", ActionFrame)
+BtnTPExec.Size = UDim2.new(1, 0, 0, 26)
+BtnTPExec.Position = UDim2.new(0, 0, 0, 20)
+BtnTPExec.BackgroundColor3 = Color3.fromRGB(40, 200, 40)
+BtnTPExec.Text = "TELEPORT"
+BtnTPExec.TextColor3 = Color3.fromRGB(255, 255, 255)
+BtnTPExec.Font = Enum.Font.GothamBold
+BtnTPExec.TextSize = 12
+Instance.new("UICorner", BtnTPExec).CornerRadius = UDim.new(0, 4)
 
 local BtnRefreshMap = Instance.new("TextButton", ActionFrame)
-BtnRefreshMap.Size = UDim2.new(1, 0, 0, 26); BtnRefreshMap.Position = UDim2.new(0, 0, 0, 52); BtnRefreshMap.BackgroundColor3 = Color3.fromRGB(200, 150, 40); BtnRefreshMap.Text = "🔄 REFRESH MAP LOG"; BtnRefreshMap.TextColor3 = Color3.fromRGB(255, 255, 255); BtnRefreshMap.Font = Enum.Font.GothamBold; BtnRefreshMap.TextSize = 12; Instance.new("UICorner", BtnRefreshMap).CornerRadius = UDim.new(0, 4)
+BtnRefreshMap.Size = UDim2.new(1, 0, 0, 26)
+BtnRefreshMap.Position = UDim2.new(0, 0, 0, 52)
+BtnRefreshMap.BackgroundColor3 = Color3.fromRGB(200, 150, 40)
+BtnRefreshMap.Text = "🔄 REFRESH MAP LOG"
+BtnRefreshMap.TextColor3 = Color3.fromRGB(255, 255, 255)
+BtnRefreshMap.Font = Enum.Font.GothamBold
+BtnRefreshMap.TextSize = 12
+Instance.new("UICorner", BtnRefreshMap).CornerRadius = UDim.new(0, 4)
 
-BtnRefreshMap.MouseButton1Click:Connect(function() MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Finishlines = {}}; SendNotification("Refresh Map", "Scan ulang map...", 3); RefreshMapObjects() end)
+BtnRefreshMap.MouseButton1Click:Connect(function() 
+    MapObjects = {Generators = {}, Pallets = {}, Windows = {}, Hooks = {}, Gates = {}, Finishlines = {}}
+    SendNotification("Refresh Map", "Scan ulang map...", 3)
+    RefreshMapObjects() 
+end)
 
 local function RefreshPlayerList()
     for _, v in ipairs(PlayerScroll:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
-            local PBtn = Instance.new("TextButton", PlayerScroll); PBtn.Size = UDim2.new(1, -4, 0, 26); PBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40); PBtn.TextColor3 = Color3.fromRGB(255, 255, 255); PBtn.Text = p.DisplayName; PBtn.Font = Enum.Font.GothamBold; PBtn.TextSize = 11; Instance.new("UICorner", PBtn).CornerRadius = UDim.new(0, 4)
-            PBtn.MouseButton1Click:Connect(function() selectedPlayerToTP = p; TargetLbl.Text = "Target: " .. p.DisplayName end)
+            local PBtn = Instance.new("TextButton", PlayerScroll)
+            PBtn.Size = UDim2.new(1, -4, 0, 26)
+            PBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            PBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            PBtn.Text = p.DisplayName
+            PBtn.Font = Enum.Font.GothamBold
+            PBtn.TextSize = 11
+            Instance.new("UICorner", PBtn).CornerRadius = UDim.new(0, 4)
+            PBtn.MouseButton1Click:Connect(function() 
+                selectedPlayerToTP = p
+                TargetLbl.Text = "Target: " .. p.DisplayName 
+            end)
         end
     end
 end
-BtnTPExec.MouseButton1Click:Connect(function() 
-    if selectedPlayerToTP and selectedPlayerToTP.Character then LocalPlayer.Character.HumanoidRootPart.CFrame = selectedPlayerToTP.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3) end 
-end)
-RefreshPlayerList(); Players.PlayerAdded:Connect(RefreshPlayerList); Players.PlayerRemoving:Connect(RefreshPlayerList)
 
-local BoxRight = Instance.new("Frame", TeleContainer); BoxRight.Size = UDim2.new(0.48, 0, 0.95, 0); BoxRight.Position = UDim2.new(0.51, 0, 0, 5); BoxRight.BackgroundColor3 = Color3.fromRGB(25, 25, 25); Instance.new("UICorner", BoxRight).CornerRadius = UDim.new(0, 6)
-local LblRight = Instance.new("TextLabel", BoxRight); LblRight.Size = UDim2.new(1, 0, 0, 20); LblRight.BackgroundTransparency = 1; LblRight.Text = "Teleport Map"; LblRight.TextColor3 = Color3.fromRGB(255, 215, 0); LblRight.Font = Enum.Font.GothamBold; LblRight.TextSize = 12
-local ObjectScroll = Instance.new("ScrollingFrame", BoxRight); ObjectScroll.Size = UDim2.new(1, -10, 1, -25); ObjectScroll.Position = UDim2.new(0, 5, 0, 25); ObjectScroll.BackgroundTransparency = 1; ObjectScroll.BorderSizePixel = 0; ObjectScroll.ScrollBarThickness = 3; ObjectScroll.CanvasSize = UDim2.new(0,0,0,0); ObjectScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-local OLayout = Instance.new("UIListLayout", ObjectScroll); OLayout.Padding = UDim.new(0, 4); OLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+BtnTPExec.MouseButton1Click:Connect(function() 
+    if selectedPlayerToTP and selectedPlayerToTP.Character then 
+        LocalPlayer.Character.HumanoidRootPart.CFrame = selectedPlayerToTP.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3) 
+    end 
+end)
+
+RefreshPlayerList()
+Players.PlayerAdded:Connect(RefreshPlayerList)
+Players.PlayerRemoving:Connect(RefreshPlayerList)
+
+local BoxRight = Instance.new("Frame", TeleContainer)
+BoxRight.Size = UDim2.new(0.48, 0, 0.95, 0)
+BoxRight.Position = UDim2.new(0.51, 0, 0, 5)
+BoxRight.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Instance.new("UICorner", BoxRight).CornerRadius = UDim.new(0, 6)
+
+local LblRight = Instance.new("TextLabel", BoxRight)
+LblRight.Size = UDim2.new(1, 0, 0, 20)
+LblRight.BackgroundTransparency = 1
+LblRight.Text = "Teleport Map"
+LblRight.TextColor3 = Color3.fromRGB(255, 215, 0)
+LblRight.Font = Enum.Font.GothamBold
+LblRight.TextSize = 12
+
+local ObjectScroll = Instance.new("ScrollingFrame", BoxRight)
+ObjectScroll.Size = UDim2.new(1, -10, 1, -25)
+ObjectScroll.Position = UDim2.new(0, 5, 0, 25)
+ObjectScroll.BackgroundTransparency = 1
+ObjectScroll.BorderSizePixel = 0
+ObjectScroll.ScrollBarThickness = 3
+ObjectScroll.CanvasSize = UDim2.new(0,0,0,0)
+ObjectScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+local OLayout = Instance.new("UIListLayout", ObjectScroll)
+OLayout.Padding = UDim.new(0, 4)
+OLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local function AddMapBtn(title, callback)
-    local Btn = Instance.new("TextButton", ObjectScroll); Btn.Size = UDim2.new(1, -4, 0, 25); Btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40); Btn.TextColor3 = Color3.fromRGB(220, 220, 220); Btn.Text = title; Btn.Font = Enum.Font.GothamBold; Btn.TextSize = 11; Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+    local Btn = Instance.new("TextButton", ObjectScroll)
+    Btn.Size = UDim2.new(1, -4, 0, 25)
+    Btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Btn.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Btn.Text = title
+    Btn.Font = Enum.Font.GothamBold
+    Btn.TextSize = 11
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
     Btn.MouseButton1Click:Connect(function() pcall(callback) end)
 end
 
-for i = 1, 7 do AddMapBtn("TP Generator " .. i, function() 
-    local gens = {}
-    if MapObjects.Generators then for _, v in ipairs(MapObjects.Generators) do table.insert(gens, v) end end
-    if #gens == 0 then SendNotification("Kosong", "Gen belum terdeteksi", 3) return end
-    table.sort(gens, function(a, b) 
-        local posA, posB = getSafePos(a), getSafePos(b)
-        if math.abs(posA.X - posB.X) < 2 then return posA.Z < posB.Z end
-        return posA.X < posB.X 
-    end)
-    local targetGen = gens[i]
-    if not targetGen then SendNotification("Info", "Generator ke-" .. i .. " belum terdeteksi.", 3) return end
-    
-    local pointCFrame = nil
-    for _, v in ipairs(targetGen:GetDescendants()) do 
-        if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") then pointCFrame = v.CFrame; if v.Name:lower() == "generatorpoint1" then break end end 
-    end
-    if not pointCFrame and targetGen.Parent and targetGen.Parent ~= Workspace then 
-        for _, v in ipairs(targetGen.Parent:GetDescendants()) do 
-            if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") and (v.Position - getSafePos(targetGen)).Magnitude < 7 then pointCFrame = v.CFrame; if v.Name:lower() == "generatorpoint1" then break end end 
-        end 
-    end
-    
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if hrp then 
-        if pointCFrame then hrp.CFrame = pointCFrame else 
-            local tpPart = targetGen:IsA("BasePart") and targetGen or targetGen.PrimaryPart or targetGen:FindFirstChildWhichIsA("BasePart", true)
-            if tpPart then hrp.CFrame = CFrame.new(tpPart.Position) end 
+for i = 1, 7 do 
+    AddMapBtn("TP Generator " .. i, function() 
+        local gens = {}
+        if MapObjects.Generators then for _, v in ipairs(MapObjects.Generators) do table.insert(gens, v) end end
+        if #gens == 0 then SendNotification("Kosong", "Gen belum terdeteksi", 3) return end
+        
+        table.sort(gens, function(a, b) 
+            local posA, posB = getSafePos(a), getSafePos(b)
+            if math.abs(posA.X - posB.X) < 2 then return posA.Z < posB.Z end
+            return posA.X < posB.X 
+        end)
+        
+        local targetGen = gens[i]
+        if not targetGen then SendNotification("Info", "Generator ke-" .. i .. " belum terdeteksi.", 3) return end
+        
+        local pointCFrame = nil
+        for _, v in ipairs(targetGen:GetDescendants()) do 
+            if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") then 
+                pointCFrame = v.CFrame; if v.Name:lower() == "generatorpoint1" then break end 
+            end 
         end
-        hrp.Velocity = Vector3.new(0,0,0) 
-    end 
-end) end
+        if not pointCFrame and targetGen.Parent and targetGen.Parent ~= Workspace then 
+            for _, v in ipairs(targetGen.Parent:GetDescendants()) do 
+                if v:IsA("BasePart") and v.Name:lower():find("generatorpoint") and (v.Position - getSafePos(targetGen)).Magnitude < 7 then 
+                    pointCFrame = v.CFrame; if v.Name:lower() == "generatorpoint1" then break end 
+                end 
+            end 
+        end
+        
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then 
+            if pointCFrame then hrp.CFrame = pointCFrame else 
+                local tpPart = targetGen:IsA("BasePart") and targetGen or targetGen.PrimaryPart or targetGen:FindFirstChildWhichIsA("BasePart", true)
+                if tpPart then hrp.CFrame = CFrame.new(tpPart.Position) end 
+            end
+            hrp.Velocity = Vector3.new(0,0,0) 
+        end 
+    end) 
+end
 
-for i = 1, 2 do AddMapBtn("TP Gate " .. i, function() 
-    local gate = MapObjects.Gates[i]
-    if not gate then return end
-    local leverGoal = gate:FindFirstChild("LeverGoal", true) or gate:FindFirstChild("levergoal", true)
-    local tpPart = leverGoal or gate.PrimaryPart or gate:FindFirstChildWhichIsA("BasePart", true)
-    if tpPart and LocalPlayer.Character then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(tpPart.Position + Vector3.new(0, 3, 0)); LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
-    end
-end) end
+for i = 1, 2 do 
+    AddMapBtn("TP Gate " .. i, function() 
+        local gate = MapObjects.Gates[i]
+        if not gate then return end
+        local leverGoal = gate:FindFirstChild("LeverGoal", true) or gate:FindFirstChild("levergoal", true)
+        local tpPart = leverGoal or gate.PrimaryPart or gate:FindFirstChildWhichIsA("BasePart", true)
+        if tpPart and LocalPlayer.Character then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(tpPart.Position + Vector3.new(0, 3, 0))
+            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+        end
+    end) 
+end
 
 -- PENGATURAN TAB 
 CreateScriptButton(TabSet, "💾 Save Config (Manual)", function() SaveConfig() SendNotification("Save", "Config tersimpan", 2) end, Color3.fromRGB(35, 100, 35))
@@ -530,30 +909,66 @@ local function DrawESP(obj, color, isEnabled, isPlayer, isGenerator, textNamePla
     if isEnabled then
         if not espVisual then 
             if useBoxESP then
-                espVisual = Instance.new("BoxHandleAdornment"); espVisual.Name = "KM_ESP_BOX"; espVisual.Parent = targetPart; espVisual.Adornee = targetPart; espVisual.AlwaysOnTop = true; espVisual.ZIndex = 10; espVisual.Size = targetPart.Size + Vector3.new(0.05, 0.05, 0.05); espVisual.Transparency = 0.5
+                espVisual = Instance.new("BoxHandleAdornment")
+                espVisual.Name = "KM_ESP_BOX"
+                espVisual.Parent = targetPart
+                espVisual.Adornee = targetPart
+                espVisual.AlwaysOnTop = true
+                espVisual.ZIndex = 10
+                espVisual.Size = targetPart.Size + Vector3.new(0.05, 0.05, 0.05)
+                espVisual.Transparency = 0.5
             else
-                espVisual = Instance.new("Highlight"); espVisual.Name = "KM_ESP"; espVisual.FillTransparency = 0.5; espVisual.Parent = obj:IsA("Model") and obj or targetPart; espVisual.Adornee = obj:IsA("Model") and obj or targetPart
+                espVisual = Instance.new("Highlight")
+                espVisual.Name = "KM_ESP"
+                espVisual.FillTransparency = 0.5
+                espVisual.Parent = obj:IsA("Model") and obj or targetPart
+                espVisual.Adornee = obj:IsA("Model") and obj or targetPart
             end
         end
-        if useBoxESP then espVisual.Color3 = color; espVisual.Visible = true else espVisual.FillColor = color; espVisual.OutlineColor = color; espVisual.Enabled = true end
+        if useBoxESP then 
+            espVisual.Color3 = color
+            espVisual.Visible = true 
+        else 
+            espVisual.FillColor = color
+            espVisual.OutlineColor = color
+            espVisual.Enabled = true 
+        end
 
-        local showText = false; local finalText = ""
+        local showText = false
+        local finalText = ""
         if isPlayer and Config["Tampilkan Nama Player & Jarak"] then
             finalText = textNamePlayer
             local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if root then finalText = finalText .. " [" .. math.floor((root.Position - targetPart.Position).Magnitude) .. "m]" end
             showText = true 
         elseif isGenerator then
-            finalText = GetGenProgress(obj) .. "%"; showText = true
+            finalText = GetGenProgress(obj) .. "%"
+            showText = true
         end
 
         if showText then 
             if not textLabelGui then
-                textLabelGui = Instance.new("BillboardGui"); textLabelGui.Name = "KM_TXT"; textLabelGui.Size = UDim2.new(0, 200, 0, 50); textLabelGui.AlwaysOnTop = true; textLabelGui.Adornee = targetPart; textLabelGui.Parent = targetPart; textLabelGui.StudsOffset = Vector3.new(0, isPlayer and 3.5 or 2.5, 0)
-                local txt = Instance.new("TextLabel", textLabelGui); txt.Name = "Text"; txt.Size = UDim2.new(1,0,1,0); txt.BackgroundTransparency = 1; txt.TextStrokeTransparency = 0; txt.Font = Enum.Font.GothamBold; txt.TextSize = 14
+                textLabelGui = Instance.new("BillboardGui")
+                textLabelGui.Name = "KM_TXT"
+                textLabelGui.Size = UDim2.new(0, 200, 0, 50)
+                textLabelGui.AlwaysOnTop = true
+                textLabelGui.Adornee = targetPart
+                textLabelGui.Parent = targetPart
+                textLabelGui.StudsOffset = Vector3.new(0, isPlayer and 3.5 or 2.5, 0)
+                
+                local txt = Instance.new("TextLabel", textLabelGui)
+                txt.Name = "Text"
+                txt.Size = UDim2.new(1,0,1,0)
+                txt.BackgroundTransparency = 1
+                txt.TextStrokeTransparency = 0
+                txt.Font = Enum.Font.GothamBold
+                txt.TextSize = 14
             end
             local txtLabel = textLabelGui:FindFirstChild("Text")
-            if txtLabel then txtLabel.TextColor3 = color; txtLabel.Text = finalText end 
+            if txtLabel then 
+                txtLabel.TextColor3 = color
+                txtLabel.Text = finalText 
+            end 
             textLabelGui.Enabled = true
         elseif textLabelGui then textLabelGui.Enabled = false end
     else
@@ -597,9 +1012,11 @@ RunService.Heartbeat:Connect(function()
 
     if hum then
         if Config["WalkSpeed"] then 
-            hum.WalkSpeed = Config["WalkSpeed Value"] or 20; wasWalkSpeedEnabled = true
+            hum.WalkSpeed = Config["WalkSpeed Value"] or 20
+            wasWalkSpeedEnabled = true
         elseif wasWalkSpeedEnabled then 
-            hum.WalkSpeed = 16; wasWalkSpeedEnabled = false 
+            hum.WalkSpeed = 16
+            wasWalkSpeedEnabled = false 
         end
 
         if Config["Anti-Stuck (Auto Cancel on Move)"] and hum.MoveDirection.Magnitude > 0 then
@@ -621,7 +1038,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ==================== THE GOD MODE QTE LOOP (LEGIT = 1.2s DELAY) ====================
+-- ==================== THE GOD MODE QTE LOOP (ANTI-GLITCH) ====================
 local isClicking = false 
 
 local function ExecuteClickUI()
@@ -652,7 +1069,7 @@ local function HandleQTEProcess(ui, isLegitMode)
     isClicking = true
     task.spawn(function()
         if isLegitMode then
-            task.wait(1.2) -- DELAY 1,2 DETIK UNTUK LEGIT SESUAI REQUEST
+            task.wait(1.2) 
             ExecuteClickUI()
             task.wait(0.35)
         else
@@ -683,7 +1100,6 @@ end
 local playerGui = LocalPlayer:WaitForChild("PlayerGui")
 for _, child in ipairs(playerGui:GetDescendants()) do MonitorUI(child) end
 playerGui.DescendantAdded:Connect(MonitorUI)
-
 
 -- ==================== METATA FULL BOT AUTONOMY ====================
 local interactDelay = 0
@@ -832,7 +1248,6 @@ task.spawn(function()
     end
 end)
 
-
 -- ==================== AUTO FARM SURVIVOR (TIMING REWORKED) ====================
 local autoFarmWaitTime = 0
 local autoFarmStatus = "IDLE"
@@ -886,7 +1301,7 @@ task.spawn(function()
                 end
             end
         elseif autoFarmStatus == "PREPARING_SURVIVOR" then
-            if tick() - autoFarmWaitTime >= 19 then -- DIUBAH KE 19 DETIK
+            if tick() - autoFarmWaitTime >= 19 then 
                 local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if hrp and MapObjects.Finishlines and #MapObjects.Finishlines > 0 then
                     local finish = MapObjects.Finishlines[1]
@@ -897,7 +1312,7 @@ task.spawn(function()
                     autoFarmWaitTime = tick()
                 else
                     SendNotification("Auto Farm", "Map blm siap. Tunggu...", 2)
-                    autoFarmWaitTime = tick() - 14 -- DELAY RETRY 5 DETIK
+                    autoFarmWaitTime = tick() - 14 
                 end
             end
         elseif autoFarmStatus == "WAITING_WIN" then
@@ -920,7 +1335,6 @@ task.spawn(function()
         end
     end
 end)
-
 
 -- ==================== MAIN AUTOMATION LOOP (GARBAGE COLLECTOR) ====================
 local staticUpdateCounter = 0
